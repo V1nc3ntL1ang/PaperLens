@@ -1,0 +1,4028 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>PaperLens - 论文分析助手</title>
+
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+
+    <!-- Font Awesome -->
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"
+    />
+
+    <!-- PDF.js -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf_viewer.min.css"
+    />
+    <script>
+      pdfjsLib.GlobalWorkerOptions.workerSrc =
+        'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    </script>
+
+    <!-- Marked.js for Markdown rendering -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+
+    <!-- Markmap for Mindmaps -->
+    <script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
+    <script src="https://cdn.jsdelivr.net/npm/markmap-lib@0.15.4/dist/browser/index.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/markmap-view@0.15.4/dist/browser/index.min.js"></script>
+
+    <!-- KaTeX CSS -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css" />
+
+    <!-- KaTeX JS -->
+    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+    <script
+      defer
+      src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"
+    ></script>
+
+    <style>
+      body {
+        font-family: 'Inter', sans-serif;
+      }
+      /* Custom Scrollbar */
+      ::-webkit-scrollbar {
+        width: 8px;
+        height: 8px;
+      }
+      ::-webkit-scrollbar-track {
+        background: #f1f1f1;
+      }
+      ::-webkit-scrollbar-thumb {
+        background: #c1c1c1;
+        border-radius: 4px;
+      }
+      ::-webkit-scrollbar-thumb:hover {
+        background: #a8a8a8;
+      }
+
+      /* PDF Viewer Styles */
+      .pdf-page-container {
+        position: relative;
+        margin: 0 auto 20px auto;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+      }
+      /* PDF 渲染优化 */
+      .pdf-canvas {
+        image-rendering: -webkit-optimize-contrast;
+        image-rendering: crisp-edges;
+        image-rendering: pixelated;
+      }
+
+      /* 针对高DPI屏幕优化 */
+      @media (-webkit-min-device-pixel-ratio: 2), (min-resolution: 192dpi) {
+        .pdf-canvas {
+          image-rendering: auto;
+        }
+      }
+      /* Force text layer to match canvas */
+      /* 修复文本层样式 */
+      .textLayer {
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        overflow: hidden;
+        opacity: 1;
+        line-height: 1;
+        pointer-events: none;
+        /* 移除 mix-blend-mode，可能导致渲染问题 */
+      }
+
+      .textLayer span {
+        color: transparent;
+        position: absolute;
+        white-space: pre;
+        cursor: text;
+        transform-origin: 0% 0%;
+        pointer-events: auto;
+        background: transparent;
+
+        border: none !important;
+        padding: 0 !important;
+        margin: 0 !important;
+        line-height: 1 !important;
+        box-sizing: border-box;
+
+        /* ===== 关键修复：处理行末空白 ===== */
+        word-spacing: 0;
+        letter-spacing: 0;
+      }
+
+      /* 修复行末多余选择区域 */
+      .textLayer span::after {
+        content: none;
+      }
+
+      /* 选择样式优化 */
+      .textLayer span::selection {
+        background: rgba(59, 130, 246, 0.3);
+        color: transparent;
+      }
+
+      /* 确保canvas和文本层对齐 */
+      .pdf-page-container {
+        position: relative;
+        display: inline-block;
+      }
+
+      .pdf-canvas {
+        display: block;
+        position: relative;
+        z-index: 0; /* canvas在底层 */
+      }
+
+      .textLayer {
+        z-index: 1; /* 文本层在上层 */
+      }
+
+      /* Floating Menu */
+      #selection-menu {
+        position: fixed;
+        z-index: 1000;
+        background: white;
+        border: 1px solid #e5e7eb;
+        border-radius: 8px;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+        padding: 4px;
+        display: none;
+        flex-direction: row;
+        gap: 4px;
+        animation: fadeIn 0.2s ease-out;
+      }
+      @keyframes fadeIn {
+        from {
+          opacity: 0;
+          transform: translateY(5px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+      #selection-menu button {
+        display: flex;
+        align-items: center;
+        padding: 6px 12px;
+        font-size: 13px;
+        color: #374151;
+        background: transparent;
+        border-radius: 4px;
+        transition: background-color 0.15s;
+      }
+      #selection-menu button:hover {
+        background-color: #f3f4f6;
+        color: #2563eb;
+      }
+
+      .typing-indicator span {
+        display: inline-block;
+        width: 6px;
+        height: 6px;
+        background-color: #3b82f6;
+        border-radius: 50%;
+        animation: typing 1.4s infinite ease-in-out both;
+        margin: 0 2px;
+      }
+      .typing-indicator span:nth-child(1) {
+        animation-delay: -0.32s;
+      }
+      .typing-indicator span:nth-child(2) {
+        animation-delay: -0.16s;
+      }
+
+      @keyframes typing {
+        0%,
+        80%,
+        100% {
+          transform: scale(0);
+        }
+        40% {
+          transform: scale(1);
+        }
+      }
+
+      /* Markdown Styles */
+      .prose h1 {
+        font-size: 1.5em;
+        font-weight: bold;
+        margin-top: 1em;
+        margin-bottom: 0.5em;
+      }
+      .prose h2 {
+        font-size: 1.25em;
+        font-weight: bold;
+        margin-top: 1em;
+        margin-bottom: 0.5em;
+      }
+      .prose p {
+        margin-bottom: 0.75em;
+        line-height: 1.6;
+      }
+      .prose ul {
+        list-style-type: disc;
+        padding-left: 1.5em;
+        margin-bottom: 0.75em;
+      }
+      .prose ol {
+        list-style-type: decimal;
+        padding-left: 1.5em;
+        margin-bottom: 0.75em;
+      }
+      .prose code {
+        background-color: #f3f4f6;
+        padding: 0.2em 0.4em;
+        border-radius: 0.25em;
+        font-family: monospace;
+        font-size: 0.9em;
+      }
+      .prose pre {
+        background-color: #1f2937;
+        color: white;
+        padding: 1em;
+        border-radius: 0.5em;
+        overflow-x: auto;
+        margin-bottom: 1em;
+      }
+      .prose blockquote {
+        border-left: 4px solid #e5e7eb;
+        padding-left: 1em;
+        color: #4b5563;
+        font-style: italic;
+      }
+
+      /* Mindmap specific styles */
+      .markmap-container {
+        width: 100%;
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+      }
+      .markmap-svg {
+        width: 100%;
+        height: 100%;
+        background: #f9fafb;
+      }
+
+      /* 修复思维导图文字显示问题 */
+      #markmap text {
+        fill: #1f2937 !important;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif !important;
+        font-size: 14px !important;
+        font-weight: 500 !important;
+        pointer-events: none !important;
+      }
+
+      /* 针对foreignObject内容 */
+      #markmap foreignObject {
+        overflow: visible !important;
+      }
+
+      #markmap foreignObject div {
+        color: #1f2937 !important;
+        background: transparent !important;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif !important;
+        font-size: 14px !important;
+        font-weight: 500 !important;
+        line-height: 1.4 !important;
+        padding: 4px 8px !important;
+        border-radius: 4px !important;
+      }
+
+      /* 确保节点背景透明 */
+      #markmap .markmap-node {
+        background: transparent !important;
+      }
+
+      /* 高亮文字对比度 */
+      #markmap .markmap-node text {
+        fill: #000000 !important;
+        stroke: none !important;
+        paint-order: stroke !important;
+      }
+
+      /* 作者编辑模态框动画 */
+      #authors-edit-modal {
+        animation: fadeIn 0.2s ease-out;
+      }
+
+      @keyframes fadeIn {
+        from {
+          opacity: 0;
+        }
+        to {
+          opacity: 1;
+        }
+      }
+
+      /* 通知样式 */
+      .notification {
+        animation: slideInRight 0.3s ease-out;
+      }
+
+      @keyframes slideInRight {
+        from {
+          transform: translateX(100%);
+          opacity: 0;
+        }
+        to {
+          transform: translateX(0);
+          opacity: 1;
+        }
+      }
+
+      /* 引用验证按钮样式 */
+      .verify-ref-btn {
+        transition: all 0.2s ease;
+      }
+
+      .verify-ref-btn:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
+      }
+
+      /* 引用项悬停效果 */
+      .reference-item {
+        border-left: 3px solid transparent;
+        transition: all 0.2s ease;
+      }
+
+      .reference-item:hover {
+        border-left-color: #3b82f6;
+        background-color: #f8fafc;
+      }
+
+      /* 确保所有外部链接样式一致 */
+      a[target='_blank'] {
+        color: #2563eb;
+        text-decoration: none;
+        transition: color 0.2s ease;
+      }
+
+      a[target='_blank']:hover {
+        color: #1d4ed8;
+        text-decoration: underline;
+      }
+
+      /* 聊天消息中的链接样式 */
+      .prose-container a {
+        color: #2563eb !important;
+        text-decoration: none !important;
+      }
+
+      .prose-container a:hover {
+        color: #1d4ed8 !important;
+        text-decoration: underline !important;
+      }
+
+      .math-block {
+        margin: 1rem 0;
+        padding: 0.75rem;
+        background-color: #f8fafc;
+        border-radius: 0.5rem;
+        overflow-x: auto;
+        text-align: center;
+      }
+
+      .math-inline {
+        padding: 0 0.2rem;
+      }
+
+      /* KaTeX 样式优化 */
+      .chat-content .katex {
+        font-size: 1.1em;
+      }
+
+      .chat-content .katex-display {
+        margin: 0;
+        padding: 0;
+      }
+
+      /* 聊天气泡 - 修复截断和滚动条问题 */
+      .chat-bubble {
+        max-width: 85%;
+        word-wrap: break-word;
+        overflow-wrap: break-word;
+        overflow: visible; /* 改为 visible，不要 hidden 或 auto */
+      }
+
+      .chat-content {
+        overflow: visible; /* 改为 visible */
+        line-height: 1.8;
+        word-wrap: break-word;
+        overflow-wrap: break-word;
+      }
+
+      /* 只在公式块需要横向滚动时才显示滚动条 */
+      .math-block {
+        margin: 1rem 0;
+        padding: 0.75rem;
+        background-color: #f8fafc;
+        border-radius: 0.5rem;
+        overflow-x: auto; /* 只有公式块需要横向滚动 */
+        overflow-y: visible;
+        text-align: center;
+      }
+
+      /* 代码块可以横向滚动 */
+      .chat-content pre {
+        overflow-x: auto;
+        overflow-y: visible;
+        max-width: 100%;
+      }
+
+      /* 确保段落和列表不被截断 */
+      .chat-content p,
+      .chat-content ul,
+      .chat-content ol,
+      .chat-content li {
+        overflow: visible;
+        word-wrap: break-word;
+        overflow-wrap: break-word;
+      }
+
+      .chat-content p {
+        margin: 0.5rem 0;
+      }
+
+      .chat-content ul,
+      .chat-content ol {
+        padding-left: 1.5rem;
+        margin: 0.5rem 0;
+      }
+
+      .chat-content li {
+        margin: 0.25rem 0;
+      }
+
+      .chat-content strong {
+        font-weight: 600;
+        color: #1e40af;
+      }
+
+      .chat-content code {
+        background-color: #f1f5f9;
+        padding: 0.125rem 0.375rem;
+        border-radius: 0.25rem;
+        font-size: 0.875em;
+        word-break: break-word;
+      }
+
+      /* KaTeX 样式优化 */
+      .chat-content .katex {
+        font-size: 1.1em;
+      }
+
+      .chat-content .katex-display {
+        margin: 0.5rem 0;
+        padding: 0.5rem;
+        overflow-x: auto;
+        overflow-y: visible;
+      }
+
+      /* 聊天历史容器 - 只有这个需要纵向滚动 */
+      #chat-history {
+        overflow-y: visible;
+        overflow-x: hidden;
+      }
+
+      /* 笔记功能样式 */
+      .page-thumbnail {
+        transition: all 0.2s ease;
+      }
+
+      .page-thumbnail:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+      }
+
+      #global-note-editor,
+      #page-note-editor {
+        font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+        line-height: 1.5;
+      }
+
+      #page-thumbnails {
+        max-height: calc(100vh - 200px);
+        overflow-y: auto;
+      }
+
+      /* 笔记状态指示器 */
+      .note-status-saved {
+        color: #10b981;
+      }
+
+      .note-status-unsaved {
+        color: #f59e0b;
+        animation: pulse 2s infinite;
+      }
+
+      @keyframes pulse {
+        0% {
+          opacity: 1;
+        }
+        50% {
+          opacity: 0.5;
+        }
+        100% {
+          opacity: 1;
+        }
+      }
+
+      /* 响应式设计 */
+      @media (max-width: 768px) {
+        #notes-tab .flex {
+          flex-direction: column;
+        }
+
+        #notes-tab .w-1\/4 {
+          width: 100%;
+          max-height: 200px;
+        }
+      }
+
+      /* 流式输出光标效果 */
+      .streaming-cursor {
+          display: inline-block;
+          animation: blink 1s infinite;
+          color: #3b82f6;
+          font-weight: bold;
+          margin-left: 2px;
+      }
+
+      @keyframes blink {
+          0%, 50% { opacity: 1; }
+          51%, 100% { opacity: 0; }
+      }
+
+      /* 流式消息样式 */
+      .streaming-message .markdown-body {
+          min-height: 20px;
+      }
+
+      /* 确保代码块在流式输出时正常显示 */
+      .streaming-message pre {
+          white-space: pre-wrap;
+          word-break: break-word;
+      }
+
+      /* 平滑的内容更新 */
+      .markdown-body {
+          transition: none; /* 禁用过渡以避免闪烁 */
+      }
+
+      /* 流式输出光标效果 */
+      .streaming-cursor {
+          display: inline;
+          animation: blink 1s infinite;
+          color: #3b82f6;
+          font-weight: bold;
+          margin-left: 2px;
+      }
+
+      @keyframes blink {
+          0%, 50% { opacity: 1; }
+          51%, 100% { opacity: 0; }
+      }
+
+      /* 流式消息样式 */
+      .streaming-message .chat-content {
+          display: inline;
+      }
+
+      .streaming-message .chat-bubble {
+          display: block;
+      }
+
+      /* 数学公式样式 */
+      .math-block {
+          overflow-x: auto;
+          margin: 1em 0;
+          text-align: center;
+      }
+
+      .math-inline {
+          display: inline;
+      }
+
+      /* 确保公式不换行异常 */
+      .chat-content .katex-display {
+          overflow-x: auto;
+          overflow-y: hidden;
+      }
+      
+
+    </style>
+  </head>
+  <body class="bg-gray-100 h-screen flex flex-col overflow-hidden">
+    <!-- Floating Selection Menu -->
+    <div id="selection-menu">
+      <button id="btn-translate">
+        <i class="fa-solid fa-language mr-2 text-blue-500"></i> 翻译
+      </button>
+      <div class="w-px h-6 bg-gray-200 my-auto"></div>
+      <button id="btn-explain">
+        <i class="fa-solid fa-circle-question mr-2 text-green-500"></i> 解释
+      </button>
+      <div class="w-px h-6 bg-gray-200 my-auto"></div>
+      <button id="btn-ask-selection">
+        <i class="fa-regular fa-comment-dots mr-2 text-purple-500"></i> 提问
+      </button>
+    </div>
+
+    <!-- Header -->
+    <header class="bg-white border-b border-gray-200 shadow-sm z-10">
+      <div class="max-w-full mx-auto px-4 sm:px-6 lg:px-8">
+        <div class="flex justify-between items-center h-16">
+          <div class="flex items-center">
+            <i class="fa-solid fa-book-open-reader text-blue-600 text-2xl mr-3"></i>
+            <h1 class="text-xl font-bold text-gray-900">
+              PaperLens <span class="text-sm font-normal text-gray-500 ml-2">论文阅读助手</span>
+            </h1>
+          </div>
+          <div class="flex items-center space-x-4">
+            <div class="relative group">
+              <button
+                id="settings-btn"
+                class="text-gray-600 hover:text-blue-600 focus:outline-none"
+              >
+                <i class="fa-solid fa-gear text-xl"></i>
+              </button>
+              <!-- Settings Dropdown -->
+              <div
+                id="settings-dropdown"
+                class="hidden absolute right-0 mt-2 w-80 bg-white rounded-md shadow-lg py-1 border border-gray-200 z-50 p-4"
+              >
+                <h3 class="text-sm font-semibold text-gray-700 mb-3">API 配置</h3>
+                <div class="mb-3">
+                  <label class="block text-xs text-gray-500 mb-1">DeepSeek API Key</label>
+                  <input
+                    type="password"
+                    id="api-key-input"
+                    class="w-full border border-gray-300 rounded px-2 py-1 text-sm focus:outline-none focus:border-blue-500"
+                    placeholder="sk-..."
+                    value=""
+                  />
+                </div>
+                <div class="mb-3">
+                  <label class="block text-xs text-gray-500 mb-1">模型版本</label>
+                  <select
+                    id="model-select"
+                    class="w-full border border-gray-300 rounded px-2 py-1 text-sm focus:outline-none focus:border-blue-500"
+                  >
+                    <option value="deepseek-chat">deepseek-chat</option>
+                    <option value="deepseek-coder">deepseek-coder</option>
+                  </select>
+                </div>
+                <div class="mb-3">
+                  <label class="block text-xs text-gray-500 mb-1">API Base URL</label>
+                  <input
+                    type="text"
+                    id="api-url-input"
+                    class="w-full border border-gray-300 rounded px-2 py-1 text-sm focus:outline-none focus:border-blue-500"
+                    value="https://api.deepseek.com/v1"
+                  />
+                </div>
+                <button
+                  id="save-settings"
+                  class="w-full bg-blue-600 text-white rounded py-1 text-sm hover:bg-blue-700"
+                >
+                  保存
+                </button>
+              </div>
+            </div>
+            <label
+              class="cursor-pointer bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md text-sm font-medium transition-colors flex items-center"
+            >
+              <i class="fa-solid fa-upload mr-2"></i> 上传 PDF
+              <input type="file" id="file-upload" class="hidden" accept="application/pdf" />
+            </label>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <!-- Main Content -->
+    <div class="flex flex-1 overflow-hidden">
+      <!-- Left Panel: PDF Viewer -->
+      <div class="w-3/5 bg-gray-500 flex flex-col border-r border-gray-300 relative group">
+        <!-- PDF Toolbar -->
+        <div
+          class="bg-gray-800 text-white p-2 flex justify-between items-center text-sm shadow-md z-10"
+        >
+          <div class="flex items-center space-x-4">
+            <span id="page-count-label">0 页</span>
+            <div class="flex items-center space-x-2">
+              <button id="zoom-out" class="hover:text-gray-300">
+                <i class="fa-solid fa-minus"></i>
+              </button>
+              <span id="zoom-level">80%</span>
+              <button id="zoom-in" class="hover:text-gray-300">
+                <i class="fa-solid fa-plus"></i>
+              </button>
+            </div>
+          </div>
+          <div id="pdf-loading" class="hidden flex items-center text-yellow-400 text-xs">
+            <i class="fa-solid fa-spinner fa-spin mr-2"></i> 正在解析...
+          </div>
+        </div>
+
+        <!-- PDF Container -->
+        <div
+          id="pdf-container"
+          class="flex-1 overflow-y-auto p-4 text-center custom-scrollbar relative"
+        >
+          <div
+            id="empty-state"
+            class="flex flex-col items-center justify-center h-full text-white opacity-70"
+          >
+            <i class="fa-regular fa-file-pdf text-6xl mb-4"></i>
+            <p class="text-lg">请上传 PDF 文件以开始阅读</p>
+          </div>
+          <div id="pdf-viewer" class="inline-block"></div>
+        </div>
+      </div>
+
+      <!-- Right Panel: Analysis Tools -->
+      <div class="w-2/5 bg-white flex flex-col">
+        <!-- Tabs -->
+        <div class="flex border-b border-gray-200">
+          <button
+            class="tab-btn flex-1 py-3 text-xs font-medium text-gray-500 border-b-2 border-transparent hover:text-gray-700 hover:border-gray-300 focus:outline-none active-tab"
+            data-tab="chat"
+          >
+            <i class="fa-regular fa-comments mr-[1px]"></i> 论文聊天
+          </button>
+          <button
+            class="tab-btn flex-1 py-3 text-xs font-medium text-gray-500 border-b-2 border-transparent hover:text-gray-700 hover:border-gray-300 focus:outline-none"
+            data-tab="summary"
+          >
+            <i class="fa-regular fa-file-lines mr-[1px]"></i> 摘要分析
+          </button>
+          <button
+            class="tab-btn flex-1 py-3 text-xs font-medium text-gray-500 border-b-2 border-transparent hover:text-gray-700 hover:border-gray-300 focus:outline-none"
+            data-tab="mindmap"
+          >
+            <i class="fa-solid fa-sitemap mr-[1px]"></i> 思维导图
+          </button>
+          <button
+            class="tab-btn flex-1 py-3 text-xs font-medium text-gray-500 border-b-2 border-transparent hover:text-gray-700 hover:border-gray-300 focus:outline-none"
+            data-tab="references"
+          >
+            <i class="fa-solid fa-list-ol mr-[1px]"></i> 参考文献
+          </button>
+          <button
+            class="tab-btn flex-1 py-3 text-xs font-medium text-gray-500 border-b-2 border-transparent hover:text-gray-700 hover:border-gray-300 focus:outline-none"
+            data-tab="authors"
+          >
+            <i class="fa-solid fa-users mr-[1px]"></i> 作者分析
+          </button>
+          <button
+            class="tab-btn flex-1 py-3 text-xs font-medium text-gray-500 border-b-2 border-transparent hover:text-gray-700 hover:border-gray-300 focus:outline-none"
+            data-tab="recommendations"
+          >
+            <i class="fa-solid fa-lightbulb mr-[1px]"></i> 相关推荐
+          </button>
+          <button
+            class="tab-btn flex-1 py-3 text-xs font-medium text-gray-500 border-b-2 border-transparent hover:text-gray-700 hover:border-gray-300 focus:outline-none"
+            data-tab="citations"
+          >
+            <i class="fa-solid fa-quote-left mr-[1px]"></i> 被引分析
+          </button>
+          <button
+            class="tab-btn flex-1 py-3 text-xs font-medium text-gray-500 border-b-2 border-transparent hover:text-gray-700 hover:border-gray-300 focus:outline-none"
+            data-tab="notes"
+          >
+            <i class="fa-solid fa-note-sticky mr-[1px]"></i> 论文笔记
+          </button>
+        </div>
+
+        <!-- Tab Contents -->
+        <div class="flex-1 overflow-y-auto bg-gray-50 relative">
+          <!-- Chat Tab -->
+          <div id="chat-tab" class="tab-content h-full flex flex-col">
+            <div id="chat-history" class="flex-1 p-4 overflow-y-hidden space-y-4">
+              <!-- Welcome Message -->
+              <div class="flex w-full">
+                <div
+                  class="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center mr-2 flex-shrink-0"
+                >
+                  <i class="fa-solid fa-robot text-blue-600 text-sm"></i>
+                </div>
+                <div
+                  class="bg-white p-3 rounded-r-lg rounded-bl-lg shadow-sm border border-gray-100 max-w-[85%] text-sm text-gray-800"
+                >
+                  你好！我是你的论文助手。请先上传一篇 PDF
+                  论文，然后你可以问我关于这篇论文的任何问题。
+                </div>
+              </div>
+            </div>
+
+            <!-- Input Area -->
+            <div class="p-4 bg-white border-t border-gray-200">
+              <div class="relative">
+                <textarea
+                  id="chat-input"
+                  rows="3"
+                  class="w-full border border-gray-300 rounded-lg pl-3 pr-12 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                  placeholder="输入你的问题..."
+                ></textarea>
+                <button
+                  id="send-btn"
+                  class="absolute right-2 bottom-2 p-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <i class="fa-solid fa-paper-plane"></i>
+                </button>
+              </div>
+              <p class="text-xs text-gray-400 mt-2 text-center">
+                DeepSeek 模型可能会产生幻觉，请核对原文。
+              </p>
+            </div>
+          </div>
+
+          <!-- Summary Tab -->
+          <div id="summary-tab" class="tab-content hidden h-full p-6 overflow-y-auto">
+            <div class="text-center mb-6">
+              <button
+                id="generate-summary-btn"
+                class="bg-blue-600 text-white px-6 py-2 rounded-full shadow hover:bg-blue-700 transition-transform active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <i class="fa-solid fa-wand-magic-sparkles mr-2"></i> 生成核心摘要
+              </button>
+            </div>
+            <div id="summary-content" class="prose prose-sm max-w-none">
+              <!-- Summary will appear here -->
+              <div class="text-center text-gray-400 mt-10">
+                <i class="fa-regular fa-clipboard text-4xl mb-3"></i>
+                <p>点击上方按钮生成论文摘要</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Mindmap Tab -->
+          <div id="mindmap-tab" class="tab-content hidden h-full flex flex-col">
+            <div class="p-4 bg-white border-b border-gray-200 flex justify-between items-center">
+              <h3 class="text-sm font-semibold text-gray-700">论文思维导图</h3>
+              <button
+                id="generate-mindmap-btn"
+                class="bg-blue-600 text-white px-4 py-1.5 rounded text-xs hover:bg-blue-700 transition-colors disabled:opacity-50 flex items-center"
+              >
+                <i class="fa-solid fa-project-diagram mr-2"></i> 生成/刷新导图
+              </button>
+            </div>
+            <div class="flex-1 relative bg-gray-50 overflow-hidden">
+              <div
+                id="mindmap-loading"
+                class="hidden absolute inset-0 z-10 bg-white/80 flex flex-col items-center justify-center"
+              >
+                <i class="fa-solid fa-spinner fa-spin text-3xl text-blue-600 mb-3"></i>
+                <p class="text-gray-600 text-sm">正在构建思维导图，请稍候...</p>
+              </div>
+              <div
+                id="mindmap-empty"
+                class="absolute inset-0 flex flex-col items-center justify-center text-gray-400"
+              >
+                <i class="fa-solid fa-sitemap text-5xl mb-4 opacity-20"></i>
+                <p class="text-sm">点击右上角按钮生成思维导图</p>
+              </div>
+              <svg id="markmap" class="w-full h-full"></svg>
+            </div>
+          </div>
+
+          <!-- References Tab -->
+          <div id="references-tab" class="tab-content hidden h-full p-0 flex flex-col">
+            <div class="p-4 border-b border-gray-200 bg-white">
+              <div class="flex justify-between items-center">
+                <h3 class="font-semibold text-gray-800">参考文献列表</h3>
+                <span
+                  id="ref-count"
+                  class="bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full text-xs"
+                  >0</span
+                >
+              </div>
+            </div>
+            <div id="references-list" class="flex-1 overflow-y-auto p-4 space-y-3">
+              <div class="text-center text-gray-400 mt-10">
+                <i class="fa-solid fa-quote-right text-4xl mb-3"></i>
+                <p>未检测到参考文献或尚未上传论文</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Recommendations Tab -->
+          <div id="recommendations-tab" class="tab-content hidden h-full flex flex-col">
+            <div class="p-4 bg-white border-b border-gray-200 flex justify-between items-center">
+              <h3 class="text-sm font-semibold text-gray-700">相关论文推荐</h3>
+              <button
+                id="generate-recommendations-btn"
+                class="bg-blue-600 text-white px-4 py-1.5 rounded text-xs hover:bg-blue-700 transition-colors disabled:opacity-50 flex items-center"
+              >
+                <i class="fa-solid fa-wand-magic-sparkles mr-2"></i> 生成推荐
+              </button>
+            </div>
+            <div class="flex-1 overflow-y-auto p-4">
+              <div id="recommendations-content">
+                <div class="text-center text-gray-400 mt-10">
+                  <i class="fa-solid fa-lightbulb text-4xl mb-3 opacity-20"></i>
+                  <p class="text-sm">点击上方按钮获取相关论文推荐</p>
+                  <p class="text-xs text-gray-300 mt-2">基于 OpenAlex 数据库</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 作者分析 Tab -->
+          <div id="authors-tab" class="tab-content hidden h-full flex flex-col">
+            <div class="p-4 bg-white border-b border-gray-200 flex justify-between items-center">
+              <h3 class="text-sm font-semibold text-gray-700">作者与团队分析</h3>
+              <div class="flex space-x-2">
+                <button
+                  id="edit-authors-btn"
+                  class="bg-gray-200 text-gray-700 px-4 py-1.5 rounded text-xs hover:bg-gray-300 transition-colors disabled:opacity-50 flex items-center"
+                >
+                  <i class="fa-solid fa-pen-to-square mr-2"></i> 编辑作者
+                </button>
+                <button
+                  id="analyze-authors-btn"
+                  class="bg-blue-600 text-white px-4 py-1.5 rounded text-xs hover:bg-blue-700 transition-colors disabled:opacity-50 flex items-center"
+                >
+                  <i class="fa-solid fa-user-graduate mr-2"></i> 分析作者
+                </button>
+              </div>
+            </div>
+            <div class="flex-1 overflow-y-auto p-4">
+              <div id="authors-content">
+                <div class="text-center text-gray-400 mt-10">
+                  <i class="fa-solid fa-users text-4xl mb-3 opacity-20"></i>
+                  <p class="text-sm">点击上方按钮分析论文作者信息</p>
+                  <p class="text-xs text-gray-300 mt-2">包括机构背景、研究团队和过往作品</p>
+                </div>
+              </div>
+            </div>
+            <!-- 作者编辑模态框 -->
+            <div
+              id="authors-edit-modal"
+              class="hidden fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4"
+            >
+              <div
+                class="bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] overflow-hidden"
+              >
+                <div class="flex justify-between items-center p-4 border-b">
+                  <h3 class="font-semibold text-lg">编辑作者信息</h3>
+                  <button id="close-edit-modal" class="text-gray-400 hover:text-gray-600">
+                    <i class="fa-solid fa-times text-xl"></i>
+                  </button>
+                </div>
+
+                <div class="p-4 overflow-y-auto">
+                  <div class="mb-4">
+                    <label class="block text-sm font-medium text-gray-700 mb-2"
+                      >作者列表 (每行一个作者)</label
+                    >
+                    <textarea
+                      id="authors-textarea"
+                      rows="6"
+                      class="w-full border border-gray-300 rounded-lg p-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                      placeholder="请输入作者姓名，每行一个..."
+                    ></textarea>
+                    <p class="text-xs text-gray-500 mt-1">
+                      提示：删除错误的作者，添加遗漏的作者，确保姓名准确
+                    </p>
+                  </div>
+
+                  <div class="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4">
+                    <div class="flex items-start">
+                      <i class="fa-solid fa-lightbulb text-blue-600 mr-2 mt-0.5"></i>
+                      <div class="text-sm text-blue-700">
+                        <strong>编辑建议：</strong>
+                        <ul class="mt-1 space-y-1">
+                          <li>• 确保作者姓名拼写准确</li>
+                          <li>• 删除自动提取错误的作者</li>
+                          <li>• 添加论文中遗漏的作者</li>
+                          <li>• 保持作者顺序与论文一致</li>
+                        </ul>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="flex justify-end space-x-3 p-4 border-t bg-gray-50">
+                  <button
+                    id="cancel-edit"
+                    class="px-4 py-2 text-sm text-gray-600 hover:text-gray-800 transition-colors"
+                  >
+                    取消
+                  </button>
+                  <button
+                    id="save-authors"
+                    class="px-4 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 transition-colors flex items-center"
+                  >
+                    <i class="fa-solid fa-check mr-2"></i> 保存并重新分析
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 引用分析 Tab -->
+          <div id="citations-tab" class="tab-content hidden h-full flex flex-col">
+            <div class="p-4 bg-white border-b border-gray-200 flex justify-between items-center">
+              <h3 class="text-sm font-semibold text-gray-700">论文引用分析</h3>
+              <button
+                id="get-citations-btn"
+                class="bg-blue-600 text-white px-4 py-1.5 rounded text-xs hover:bg-blue-700 transition-colors disabled:opacity-50 flex items-center"
+              >
+                <i class="fa-solid fa-magnifying-glass mr-2"></i> 查找引用
+              </button>
+            </div>
+            <div class="flex-1 overflow-y-auto p-4">
+              <div id="citations-content">
+                <div class="text-center text-gray-400 mt-10">
+                  <i class="fa-solid fa-quote-left text-4xl mb-3 opacity-20"></i>
+                  <p class="text-sm">点击上方按钮查找引用这篇论文的其他文献</p>
+                  <p class="text-xs text-gray-300 mt-2">基于 Semantic Scholar 数据库</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Notes Tab -->
+          <div id="notes-tab" class="tab-content hidden h-full flex flex-col">
+            <div class="p-4 bg-white border-b border-gray-200 flex justify-between items-center">
+              <h3 class="text-sm font-semibold text-gray-700">论文笔记</h3>
+              <div class="flex space-x-2">
+                <!-- 新增导出按钮 -->
+                <button
+                  id="export-notes-btn"
+                  class="bg-green-600 text-white px-4 py-1.5 rounded text-xs hover:bg-green-700 transition-colors disabled:opacity-50 flex items-center"
+                >
+                  <i class="fa-solid fa-download mr-2"></i> 导出笔记
+                </button>
+                <button
+                  id="save-notes-btn"
+                  class="bg-blue-600 text-white px-4 py-1.5 rounded text-xs hover:bg-blue-700 transition-colors disabled:opacity-50 flex items-center"
+                >
+                  <i class="fa-solid fa-floppy-disk mr-2"></i> 保存笔记
+                </button>
+                <button
+                  id="load-notes-btn"
+                  class="bg-gray-600 text-white px-4 py-1.5 rounded text-xs hover:bg-gray-700 transition-colors disabled:opacity-50 flex items-center"
+                >
+                  <i class="fa-solid fa-folder-open mr-2"></i> 加载笔记
+                </button>
+              </div>
+            </div>
+
+            <div class="flex-1 overflow-hidden flex">
+              <!-- 左侧：页面缩略图导航 -->
+              <div class="w-1/4 bg-gray-50 border-r border-gray-200 overflow-y-hidden">
+                <div class="p-3">
+                  <h4 class="text-xs font-semibold text-gray-600 mb-2">页面导航</h4>
+                  <div id="page-thumbnails" class="space-y-2">
+                    <!-- 页面缩略图将通过JavaScript动态生成 -->
+                  </div>
+                </div>
+              </div>
+
+              <!-- 右侧：笔记编辑器 -->
+              <div class="flex-1 flex flex-col">
+                <!-- 全局笔记区域 -->
+                <div class="border-b border-gray-200 p-4">
+                  <div class="flex items-center justify-between mb-2">
+                    <label class="text-sm font-medium text-gray-700 flex items-center">
+                      <i class="fa-solid fa-file-lines mr-2"></i> 整体笔记
+                    </label>
+                    <span id="global-note-status" class="text-xs text-gray-500">已保存</span>
+                  </div>
+                  <textarea
+                    id="global-note-editor"
+                    class="w-full h-32 border border-gray-300 rounded-lg p-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                    placeholder="在这里记录论文的整体理解、核心观点、重要结论等..."
+                  ></textarea>
+                </div>
+
+                <!-- 页面笔记区域 -->
+                <div class="flex-1 overflow-hidden flex flex-col">
+                  <div class="border-b border-gray-200 p-3 bg-white">
+                    <div class="flex items-center justify-between">
+                      <div>
+                        <span id="current-page-label" class="text-sm font-medium text-gray-700"
+                          >页面笔记</span
+                        >
+                        <span id="page-note-status" class="text-xs text-gray-500 ml-2"
+                          >第 1 页</span
+                        >
+                      </div>
+                      <div class="flex space-x-2">
+                        <button
+                          id="copy-page-notes"
+                          class="text-xs bg-gray-100 text-gray-600 px-2 py-1 rounded hover:bg-gray-200"
+                        >
+                          <i class="fa-solid fa-copy mr-1"></i> 复制
+                        </button>
+                        <button
+                          id="clear-page-notes"
+                          class="text-xs bg-red-100 text-red-600 px-2 py-1 rounded hover:bg-red-200"
+                        >
+                          <i class="fa-solid fa-trash mr-1"></i> 清空
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="flex-1 overflow-hidden relative">
+                    <!-- 页面选择器 -->
+
+                    <textarea
+                      id="page-note-editor"
+                      class="w-full h-full border-none p-4 text-sm focus:outline-none resize-none"
+                      placeholder="选择左侧页面，为当前页面添加笔记..."
+                    ></textarea>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- JavaScript Logic -->
+    <script>
+      // State Management
+      const state = {
+        apiKey: '',
+        apiBaseUrl: 'https://api.deepseek.com/v1',
+        model: 'deepseek-chat',
+        pdfDoc: null,
+        scale: 0.8,
+        fullText: '',
+        extractedReferences: [],
+        chatHistory: [
+          {
+            role: 'system',
+            content:
+              '你是一个专业的学术助手，擅长回答关于给定论文的问题。请基于提供的论文内容回答。',
+          },
+        ],
+        recommendedPapers: [],
+        authorsAnalysis: null,
+        originalAuthors: [], // 存储原始提取的作者
+        currentAuthors: [], // 存储当前显示的作者
+        paperCitations: [], // 存储引用信息
+        githubUrls: [],
+        notes: {
+          global: '', // 全局笔记
+          pages: {}, // 页面笔记：{pageNum: content}
+          currentPage: 1, // 当前编辑的页面
+          hasUnsavedChanges: false,
+        },
+        pdfHash: null, // 当前PDF的哈希值
+      };
+
+      // DOM Elements
+      const els = {
+        fileUpload: document.getElementById('file-upload'),
+        pdfContainer: document.getElementById('pdf-container'),
+        pdfViewer: document.getElementById('pdf-viewer'),
+        emptyState: document.getElementById('empty-state'),
+        zoomIn: document.getElementById('zoom-in'),
+        zoomOut: document.getElementById('zoom-out'),
+        zoomLevel: document.getElementById('zoom-level'),
+        pageCountLabel: document.getElementById('page-count-label'),
+        pdfLoading: document.getElementById('pdf-loading'),
+
+        // Settings
+        settingsBtn: document.getElementById('settings-btn'),
+        settingsDropdown: document.getElementById('settings-dropdown'),
+        apiKeyInput: document.getElementById('api-key-input'),
+        apiUrlInput: document.getElementById('api-url-input'),
+        modelSelect: document.getElementById('model-select'),
+        saveSettings: document.getElementById('save-settings'),
+
+        // Tabs
+        tabBtns: document.querySelectorAll('.tab-btn'),
+        tabContents: document.querySelectorAll('.tab-content'),
+
+        // Chat
+        chatHistory: document.getElementById('chat-history'),
+        chatInput: document.getElementById('chat-input'),
+        sendBtn: document.getElementById('send-btn'),
+
+        // Summary
+        generateSummaryBtn: document.getElementById('generate-summary-btn'),
+        summaryContent: document.getElementById('summary-content'),
+
+        // Mindmap
+        generateMindmapBtn: document.getElementById('generate-mindmap-btn'),
+        mindmapLoading: document.getElementById('mindmap-loading'),
+        mindmapEmpty: document.getElementById('mindmap-empty'),
+
+        // References
+        referencesList: document.getElementById('references-list'),
+        refCount: document.getElementById('ref-count'),
+
+        // Recommendations
+        generateRecommendationsBtn: document.getElementById('generate-recommendations-btn'),
+        recommendationsContent: document.getElementById('recommendations-content'),
+
+        // Authors Analysis
+        analyzeAuthorsBtn: document.getElementById('analyze-authors-btn'),
+        authorsContent: document.getElementById('authors-content'),
+
+        editAuthorsBtn: document.getElementById('edit-authors-btn'),
+        authorsEditModal: document.getElementById('authors-edit-modal'),
+        closeEditModal: document.getElementById('close-edit-modal'),
+        cancelEdit: document.getElementById('cancel-edit'),
+        saveAuthors: document.getElementById('save-authors'),
+        authorsTextarea: document.getElementById('authors-textarea'),
+
+        getCitationsBtn: document.getElementById('get-citations-btn'),
+        citationsContent: document.getElementById('citations-content'),
+      };
+
+      // 笔记相关的DOM元素
+      const noteElements = {
+        notesTab: document.getElementById('notes-tab'),
+        globalNoteEditor: document.getElementById('global-note-editor'),
+        pageNoteEditor: document.getElementById('page-note-editor'),
+        pageThumbnails: document.getElementById('page-thumbnails'),
+        currentPageLabel: document.getElementById('current-page-label'),
+        exportNotesBtn: document.getElementById('export-notes-btn'),
+        saveNotesBtn: document.getElementById('save-notes-btn'),
+        loadNotesBtn: document.getElementById('load-notes-btn'),
+        copyPageNotes: document.getElementById('copy-page-notes'),
+        clearPageNotes: document.getElementById('clear-page-notes'),
+      };
+
+      // --- Initialization ---
+
+      // Toggle Settings
+      els.settingsBtn.addEventListener('click', e => {
+        e.stopPropagation();
+        els.settingsDropdown.classList.toggle('hidden');
+      });
+
+      // Save Settings
+      els.saveSettings.addEventListener('click', () => {
+        state.apiKey = els.apiKeyInput.value;
+        state.apiBaseUrl = els.apiUrlInput.value;
+        state.model = els.modelSelect.value;
+        els.settingsDropdown.classList.add('hidden');
+        alert('设置已保存');
+      });
+
+      window.addEventListener('beforeunload', () => {
+        state.apiKey = '';
+        if (els.apiKeyInput) {
+          els.apiKeyInput.value = '';
+        }
+      });
+
+      // Close settings when clicking outside
+      document.addEventListener('click', e => {
+        if (!els.settingsDropdown.contains(e.target) && e.target !== els.settingsBtn) {
+          els.settingsDropdown.classList.add('hidden');
+        }
+      });
+
+      // Tab Switching
+      els.tabBtns.forEach(btn => {
+        btn.addEventListener('click', () => {
+          // Remove active class from all
+          els.tabBtns.forEach(b => {
+            b.classList.remove('active-tab', 'text-blue-600', 'border-blue-600');
+            b.classList.add('border-transparent', 'text-gray-500');
+          });
+
+          // Add active class to clicked
+          btn.classList.add('active-tab', 'text-blue-600', 'border-blue-600');
+          btn.classList.remove('border-transparent', 'text-gray-500');
+
+          // Show content
+          els.tabContents.forEach(c => c.classList.add('hidden'));
+          document.getElementById(`${btn.dataset.tab}-tab`).classList.remove('hidden');
+        });
+      });
+
+      // Force styling for active tab on load
+      document.querySelector('.active-tab').classList.add('text-blue-600', 'border-blue-600');
+      document.querySelector('.active-tab').classList.remove('border-transparent', 'text-gray-500');
+
+      // --- PDF Handling ---
+
+      els.fileUpload.addEventListener('change', async e => {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        if (file.type !== 'application/pdf') {
+          alert('请上传 PDF 文件');
+          return;
+        }
+
+        // 1. Frontend Visual Render (Client-side for speed/UX)
+        renderPdfVisually(file);
+
+        // 2. Backend Processing (For text & analysis)
+        uploadPdfToBackend(file);
+      });
+
+      function renderPdfVisually(file) {
+        els.emptyState.classList.add('hidden');
+        els.pdfLoading.classList.remove('hidden');
+        els.pdfViewer.innerHTML = '';
+
+        const fileReader = new FileReader();
+        fileReader.onload = async function () {
+          const typedarray = new Uint8Array(this.result);
+          try {
+            const loadingTask = pdfjsLib.getDocument(typedarray);
+            state.pdfDoc = await loadingTask.promise;
+            els.pageCountLabel.textContent = `${state.pdfDoc.numPages} 页`;
+
+            // Render pages (progressive)
+            for (let pageNum = 1; pageNum <= state.pdfDoc.numPages; pageNum++) {
+              await renderPage(pageNum);
+            }
+            els.pdfLoading.classList.add('hidden');
+          } catch (error) {
+            console.error('Error rendering PDF:', error);
+          }
+        };
+        fileReader.readAsArrayBuffer(file);
+      }
+
+      async function uploadPdfToBackend(file) {
+        const formData = new FormData();
+        formData.append('file', file);
+
+        try {
+          // Update UI to show backend processing
+          addMessageToChat('assistant', '📄 正在后台解析论文文本和提取引用...');
+
+          const response = await fetch('/api/upload', {
+            method: 'POST',
+            body: formData,
+            headers: {
+              'X-API-Key': state.apiKey,
+            },
+          });
+
+          if (!response.ok) throw new Error('上传失败');
+
+          const data = await response.json();
+          state.fullText = data.text;
+          state.extractedReferences = data.references;
+          // 确保保存标题和作者信息
+          state.paperTitle = data.title || '';
+          state.paperAuthors = data.authors || [];
+          if (data.github_urls) {
+            state.githubUrls = data.github_urls;
+          }
+          // Update UI
+          renderReferences();
+          updateSystemContext();
+          // 笔记初始化
+          setupNotesAfterUpload();
+        } catch (error) {
+          console.error('Backend error:', error);
+          addMessageToChat('assistant', '❌ PDF 解析失败: ' + error.message);
+        }
+      }
+
+      async function renderPage(num) {
+        try {
+          const page = await state.pdfDoc.getPage(num);
+
+          // 提高渲染质量
+          const dpi = 150;
+          const scale = (dpi / 96) * state.scale;
+          const viewport = page.getViewport({ scale: scale });
+
+          // Create Container
+          const pageContainer = document.createElement('div');
+          pageContainer.className = 'pdf-page-container';
+          pageContainer.style.width = `${viewport.width}px`;
+          pageContainer.style.height = `${viewport.height}px`;
+          pageContainer.style.position = 'relative'; // 确保相对定位
+
+          pageContainer.style.setProperty('--scale-factor', scale.toString());
+
+          // Create Canvas
+          const canvas = document.createElement('canvas');
+          const ctx = canvas.getContext('2d');
+
+          const outputScale = window.devicePixelRatio || 1;
+          canvas.width = Math.floor(viewport.width * outputScale);
+          canvas.height = Math.floor(viewport.height * outputScale);
+          canvas.style.width = `${viewport.width}px`;
+          canvas.style.height = `${viewport.height}px`;
+          canvas.className = 'pdf-canvas';
+
+          if (outputScale !== 1) {
+            ctx.scale(outputScale, outputScale);
+          }
+
+          // Create Text Layer - 修复定位
+          const textLayerDiv = document.createElement('div');
+          textLayerDiv.className = 'textLayer';
+          textLayerDiv.style.width = `${viewport.width}px`;
+          textLayerDiv.style.height = `${viewport.height}px`;
+          textLayerDiv.style.position = 'absolute'; // 绝对定位
+          textLayerDiv.style.top = '0';
+          textLayerDiv.style.left = '0';
+          textLayerDiv.style.overflow = 'hidden';
+          textLayerDiv.style.lineHeight = '1.0'; // 确保行高一致
+
+          // Append elements
+          pageContainer.appendChild(canvas);
+          pageContainer.appendChild(textLayerDiv);
+          els.pdfViewer.appendChild(pageContainer);
+
+          // Render Canvas
+          const renderContext = {
+            canvasContext: ctx,
+            viewport: viewport,
+            intent: 'display',
+          };
+
+          await page.render(renderContext).promise;
+
+          // 改进的文本层渲染
+          const textContent = await page.getTextContent();
+
+          const textLayerPromise = pdfjsLib.renderTextLayer({
+            textContentSource: textContent,
+            container: textLayerDiv,
+            viewport: viewport,
+            textDivs: [],
+            enhanceTextSelection: true,
+          }).promise;
+
+          // 等待文本层渲染完成
+          await textLayerPromise;
+
+          // ===== 修复行末空白问题 =====
+          fixTextLayerWhitespace(textLayerDiv);
+
+          // 验证文本层是否正确渲染
+          await waitForTextLayerReady(textLayerDiv, num);
+
+          console.log(`第 ${num} 页渲染完成`);
+        } catch (e) {
+          console.error('Render Error:', e);
+        }
+      }
+
+      // Zoom controls with better scaling
+      els.zoomIn.addEventListener('click', () => {
+        state.scale += 0.1; // 从0.2减小到0.1，更精细的控制
+        updateZoom();
+      });
+
+      els.zoomOut.addEventListener('click', () => {
+        if (state.scale > 0.3) {
+          // 调整最小缩放
+          state.scale -= 0.1;
+          updateZoom();
+        }
+      });
+
+      // 添加文本层渲染状态检测
+      function waitForTextLayerReady(textLayerDiv, pageNum) {
+        return new Promise(resolve => {
+          const checkReady = () => {
+            const textSpans = textLayerDiv.querySelectorAll('span');
+            if (textSpans.length > 0) {
+              console.log(`第 ${pageNum} 页找到 ${textSpans.length} 个文本span`);
+              resolve(true);
+            } else {
+              setTimeout(checkReady, 100);
+            }
+          };
+          checkReady();
+        });
+      }
+
+      function updateZoom() {
+        els.zoomLevel.textContent = `${Math.round(state.scale * 100)}%`;
+        els.pdfViewer.innerHTML = '';
+        if (state.pdfDoc) {
+          for (let i = 1; i <= state.pdfDoc.numPages; i++) {
+            renderPage(i);
+          }
+        }
+      }
+
+      // 更新所有页面的缩放因子
+      document.querySelectorAll('.pdf-page-container').forEach(container => {
+        const dpi = 150;
+        const scale = (dpi / 96) * state.scale;
+        container.style.setProperty('--scale-factor', scale.toString());
+      });
+
+      /**
+       * 修复文本层行末空白问题
+       */
+      function fixTextLayerWhitespace(textLayerDiv) {
+        const spans = textLayerDiv.querySelectorAll('span');
+
+        spans.forEach(span => {
+          const text = span.textContent;
+
+          // 检测并处理行末空白
+          if (text && text !== text.trimEnd()) {
+            const trimmedText = text.trimEnd();
+
+            if (trimmedText.length === 0) {
+              // 整个 span 都是空白，隐藏它
+              span.style.display = 'none';
+            } else {
+              // 计算需要保留的宽度比例
+              const originalLength = text.length;
+              const trimmedLength = trimmedText.length;
+              const ratio = trimmedLength / originalLength;
+
+              // 获取当前宽度并调整
+              const currentWidth = parseFloat(span.style.width);
+              if (currentWidth && !isNaN(currentWidth)) {
+                span.style.width = `${currentWidth * ratio}px`;
+              }
+
+              // 更新文本内容
+              span.textContent = trimmedText;
+            }
+          }
+
+          // 移除可能的多余样式
+          span.style.border = 'none';
+          span.style.padding = '0';
+          span.style.margin = '0';
+        });
+      }
+
+      // --- Text Selection & Floating Menu ---
+
+      const selectionMenu = document.getElementById('selection-menu');
+      const btnTranslate = document.getElementById('btn-translate');
+      const btnExplain = document.getElementById('btn-explain');
+      const btnAsk = document.getElementById('btn-ask-selection');
+
+      // Hide menu on click elsewhere
+      document.addEventListener('mousedown', e => {
+        if (!selectionMenu.contains(e.target)) {
+          selectionMenu.style.display = 'none';
+        }
+      });
+
+      // Handle Selection
+      els.pdfContainer.addEventListener('mouseup', () => {
+        const selection = window.getSelection();
+        const text = selection.toString().trim();
+
+        if (!text) {
+          selectionMenu.style.display = 'none';
+          return;
+        }
+
+        // Position menu
+        const range = selection.getRangeAt(0);
+        const rect = range.getBoundingClientRect();
+
+        // Check if selection is inside PDF container (roughly)
+        const containerRect = els.pdfContainer.getBoundingClientRect();
+
+        selectionMenu.style.display = 'flex';
+        // Center above selection, ensure it doesn't go off screen
+        let top = rect.top - 50;
+        let left = rect.left + rect.width / 2 - selectionMenu.offsetWidth / 2;
+
+        if (top < 0) top = rect.bottom + 10;
+        if (left < 10) left = 10;
+
+        selectionMenu.style.top = `${top}px`;
+        selectionMenu.style.left = `${left}px`;
+      });
+
+      // Helper to switch tab and chat
+      function triggerSelectionAction(promptPrefix, autoSend = true) {
+        const selection = window.getSelection();
+        const text = selection.toString().trim();
+        if (!text) return;
+
+        // Switch to chat tab
+        const chatTabBtn = document.querySelector('[data-tab="chat"]');
+        if (chatTabBtn) chatTabBtn.click();
+
+        selectionMenu.style.display = 'none';
+        window.getSelection().removeAllRanges();
+
+        if (autoSend) {
+          const query = `${promptPrefix}\n\n"${text}"`;
+          els.chatInput.value = query;
+          handleSendMessage();
+        } else {
+          els.chatInput.value = `${promptPrefix} "${text}"`;
+          els.chatInput.focus();
+        }
+      }
+
+      btnTranslate.addEventListener('click', () =>
+        triggerSelectionAction('请将以下这段论文内容翻译成中文：')
+      );
+      btnExplain.addEventListener('click', () =>
+        triggerSelectionAction('请通俗易懂地解释以下这段内容的含义和背景：')
+      );
+      btnAsk.addEventListener('click', () => triggerSelectionAction('关于这段内容：', false));
+
+      // --- Text Analysis & Logic ---
+
+      function updateSystemContext() {
+        const contextText = state.fullText.substring(0, 30000);
+
+        state.chatHistory = [
+          {
+            role: 'system',
+            content:
+              '你是一个专业的学术助手，擅长回答关于给定论文的问题。请基于提供的论文内容回答。',
+          },
+          { role: 'system', content: `论文内容（摘要）:\n${contextText}` },
+        ];
+
+        // 构建完成消息
+        let completeMessage = `✅ 解析完成！包含 ${state.extractedReferences.length} 条参考文献。`;
+
+        // 添加 GitHub 链接（使用 HTML 格式）
+        if (state.githubUrls && state.githubUrls.length > 0) {
+          completeMessage += '\n\n📦 **GitHub 仓库：**\n';
+          state.githubUrls.forEach(url => {
+            completeMessage += `- <a href="${url}" target="_blank" rel="noopener noreferrer" class="text-blue-600 underline hover:text-blue-800">${url}</a>\n`;
+          });
+        }
+
+        completeMessage += '\n你可以开始提问了。';
+
+        addMessageToChat('assistant', completeMessage);
+      }
+
+      function renderReferences() {
+        els.refCount.textContent = state.extractedReferences.length;
+        els.referencesList.innerHTML = '';
+
+        if (state.extractedReferences.length === 0) {
+          els.referencesList.innerHTML = `<div class="text-center text-gray-400 mt-10"><p>未检测到明显的参考文献格式</p></div>`;
+          return;
+        }
+
+        state.extractedReferences.forEach((ref, index) => {
+          const div = document.createElement('div');
+          div.className =
+            'reference-item bg-white border border-gray-200 p-3 rounded text-sm text-gray-700 hover:bg-gray-50 transition-colors mb-3';
+          const safeRef = ref.replace(/"/g, '&quot;').replace(/'/g, "\\'");
+
+          div.innerHTML = `
+                    <div class="flex justify-between items-start mb-2">
+                        <span class="font-mono text-blue-600 font-bold mr-2 text-xs mt-0.5">[${
+                          index + 1
+                        }]</span>
+                        <div class="flex-1 text-gray-800 leading-relaxed">${ref}</div>
+                    </div>
+                    <div class="flex justify-between items-center mt-3 pt-2 border-t border-gray-100">
+                        <span class="text-xs text-gray-500">
+                            <i class="fa-solid fa-clock mr-1"></i> 点击验证准确性
+                        </span>
+                        <div class="flex space-x-2">
+                            <button class="verify-ref-btn text-xs bg-blue-50 text-blue-600 px-3 py-1 rounded hover:bg-blue-100 transition-colors flex items-center"
+                                    onclick="verifyReference('${safeRef}')">
+                                <i class="fa-solid fa-magnifying-glass mr-1"></i> 验证引用
+                            </button>
+                            <button class="text-xs bg-gray-100 text-gray-600 px-3 py-1 rounded hover:bg-gray-200 transition-colors flex items-center"
+                                    onclick="addReferenceToChat('${safeRef}')">
+                                <i class="fa-regular fa-comment mr-1"></i> 讨论
+                            </button>
+                        </div>
+                    </div>
+                `;
+          els.referencesList.appendChild(div);
+        });
+      }
+
+      // 添加讨论引用的功能
+      window.addReferenceToChat = function (refText) {
+        const chatTabBtn = document.querySelector('[data-tab="chat"]');
+        if (chatTabBtn) chatTabBtn.click();
+
+        const query = `请分析以下引用的重要性和相关性：\n\n"${refText}"`;
+        els.chatInput.value = query;
+        els.chatInput.focus();
+      };
+
+      // Global function for inline onclick - 修复版本
+      window.verifyReference = async function (refText) {
+        addMessageToChat('assistant', `🔍 正在使用AI验证引用: "${refText.substring(0, 40)}..."`);
+
+        try {
+          const response = await fetch('/api/verify_reference', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'X-API-Key': state.apiKey,
+            },
+            body: JSON.stringify({
+              reference: refText,
+              api_base: state.apiBaseUrl,
+            }),
+          });
+
+          const data = await response.json();
+
+          if (!response.ok) {
+            if (data.fallback_data) {
+              const fallback = data.fallback_data;
+              const msg = `⚠️ **验证服务暂时不可用**\n\n**引用**: ${fallback.reference_preview}\n**建议**: ${fallback.suggestion}`;
+              addMessageToChat('assistant', msg);
+            } else {
+              throw new Error(data.error || `HTTP ${response.status}`);
+            }
+          } else if (data.found) {
+            // 成功找到匹配论文 - 修改消息格式，让链接在新窗口打开
+            const paper = data.data;
+            const matchScore = Math.round((data.match_score || 0) * 100);
+            const authors = paper.authors ? paper.authors.map(a => a.name).join(', ') : '未知作者';
+            const year = paper.year || '未知年份';
+            const citationCount = paper.citationCount || 0;
+            const venue = paper.venue || paper.publicationVenue?.name || '未知来源';
+
+            // 使用Markdown格式，链接会自动被处理成新窗口打开
+            const msg = `✅ **验证成功** (匹配度: ${matchScore}%)\n\n**标题**: ${paper.title}\n**年份**: ${year}\n**作者**: ${authors}\n**引用数**: ${citationCount}\n**来源**: ${venue}\n\n[查看原文](${paper.url})`;
+            addMessageToChat('assistant', msg);
+          } else {
+            // 未找到匹配或匹配度低
+            if (data.best_candidate) {
+              const candidate = data.best_candidate;
+              const matchScore = Math.round((data.match_score || 0) * 100);
+              const authors = candidate.authors ? candidate.authors.join(', ') : '未知作者';
+
+              const msg = `⚠️ **匹配度较低** (${matchScore}%)\n\n**最接近的论文**:\n**标题**: ${candidate.title}\n**年份**: ${candidate.year}\n**作者**: ${authors}\n\n建议手动核对引用准确性。`;
+              addMessageToChat('assistant', msg);
+            } else {
+              const msg = `❌ **未找到匹配论文**\n\n搜索词: "${data.search_query_used}"\n\n建议：检查引用格式或手动搜索。`;
+              addMessageToChat('assistant', msg);
+            }
+          }
+        } catch (e) {
+          console.error('引用验证错误:', e);
+          const errorMsg = `❌ 验证请求失败: ${e.message}\n\n请检查网络连接或稍后重试。`;
+          addMessageToChat('assistant', errorMsg);
+        }
+      };
+
+      // --- Chat & API Integration ---
+      async function callDeepSeekAPI(messages, maxTokens = 500) {
+            if (!state.apiKey) {
+                throw new Error("请先在右上角设置中配置 API Key");
+            }
+
+            try {
+                // Call Backend Proxy
+                const response = await fetch('/api/chat', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-API-Key': state.apiKey
+                    },
+                    body: JSON.stringify({
+                        model: state.model,
+                        messages: messages,
+                        api_base: state.apiBaseUrl // Optional pass through
+                    })
+                });
+
+                if (!response.ok) {
+                    const err = await response.json();
+                    throw new Error(err.error || 'API 请求失败');
+                }
+
+                const data = await response.json();
+                return data.choices[0].message.content;
+            } catch (error) {
+                console.error('API Error:', error);
+                throw error;
+            }
+        }
+
+      // 流式调用 API - 最终修复版
+      async function callDeepSeekAPIStream(messages, onChunk, onComplete, onError) {
+          if (!state.apiKey) {
+              onError(new Error('请先在右上角设置中配置 API Key'));
+              return;
+          }
+
+          let hasCompleted = false;
+
+          // 安全调用 onComplete，确保只调用一次
+          const safeComplete = (content) => {
+              if (hasCompleted) {
+                  console.log('onComplete 已调用过，跳过');
+                  return;
+              }
+              hasCompleted = true;
+              console.log('调用 onComplete，内容长度:', content.length);
+              onComplete(content);
+          };
+
+          try {
+              const response = await fetch('/api/chat/stream', {
+                  method: 'POST',
+                  headers: {
+                      'Content-Type': 'application/json',
+                      'X-API-Key': state.apiKey,
+                  },
+                  body: JSON.stringify({
+                      model: state.model,
+                      messages: messages,
+                      api_base: state.apiBaseUrl,
+                      stream: true
+                  }),
+              });
+
+              if (!response.ok) {
+                  const err = await response.json().catch(() => ({ error: 'API 请求失败' }));
+                  throw new Error(err.error || `API 请求失败: ${response.status}`);
+              }
+
+              const reader = response.body.getReader();
+              const decoder = new TextDecoder('utf-8');
+              let fullContent = '';
+              let buffer = '';
+
+              while (true) {
+                  const { done, value } = await reader.read();
+
+                  if (done) {
+                      console.log('reader done，调用 safeComplete');
+                      safeComplete(fullContent);
+                      break;  // 直接退出循环
+                  }
+
+                  buffer += decoder.decode(value, { stream: true });
+                  const lines = buffer.split('\n');
+                  buffer = lines.pop() || '';
+
+                  for (const line of lines) {
+                      if (!line.trim()) continue;
+                      
+                      // 检查 [DONE] 标记
+                      if (line.includes('[DONE]')) {
+                          console.log('收到 [DONE] 标记');
+                          // 不在这里调用 onComplete，让 done 判断来处理
+                          continue;
+                      }
+
+                      if (line.startsWith('data: ')) {
+                          const jsonStr = line.slice(6).trim();
+                          if (!jsonStr || jsonStr === '[DONE]') continue;
+
+                          try {
+                              const parsed = JSON.parse(jsonStr);
+                              const content = parsed.choices?.[0]?.delta?.content || '';
+
+                              if (content) {
+                                  fullContent += content;
+                                  onChunk(content, fullContent);
+                              }
+                          } catch (e) {
+                              // 忽略解析错误
+                          }
+                      }
+                  }
+              }
+          } catch (error) {
+              console.error('Stream API Error:', error);
+              if (!hasCompleted) {
+                  onError(error);
+              }
+          }
+      }
+
+      // 创建防抖渲染器 - 保存引用版本
+      function createDebouncedRenderer(element, delay = 50) {
+          let timeoutId = null;
+          let lastContent = '';
+          let isDestroyed = false;
+
+          // 立即获取并保存 chatContent 的引用
+          const chatContent = element.querySelector('.chat-content');
+          
+          console.log('渲染器初始化，chatContent:', chatContent ? '存在' : '不存在');
+
+          return {
+              update: (content) => {
+                  if (isDestroyed) return;
+                  
+                  lastContent = content;
+
+                  if (timeoutId) {
+                      clearTimeout(timeoutId);
+                  }
+
+                  timeoutId = setTimeout(() => {
+                      if (isDestroyed) return;
+                      
+                      // 使用保存的引用，不重新查询
+                      if (chatContent) {
+                          try {
+                              if (typeof marked !== 'undefined') {
+                                  chatContent.innerHTML = marked.parse(lastContent);
+                              } else {
+                                  chatContent.textContent = lastContent;
+                              }
+                              if (els.chatHistory) {
+                                  els.chatHistory.scrollTop = els.chatHistory.scrollHeight;
+                              }
+                          } catch (e) {
+                              console.error('渲染器更新错误:', e);
+                          }
+                      }
+                  }, delay);
+              },
+
+              flush: () => {
+                  if (timeoutId) {
+                      clearTimeout(timeoutId);
+                      timeoutId = null;
+                  }
+                  return lastContent;
+              },
+              
+              destroy: () => {
+                  isDestroyed = true;
+                  if (timeoutId) {
+                      clearTimeout(timeoutId);
+                      timeoutId = null;
+                  }
+              },
+              
+              // 返回保存的引用
+              getChatContent: () => chatContent
+          };
+      }
+
+
+      // 完成流式消息 - 增强保护版
+      function finalizeStreamingMessage(element, content) {
+          console.log('=== finalizeStreamingMessage 开始 ===');
+          
+          // 检查元素
+          if (!element) {
+              console.error('element 为 null');
+              return;
+          }
+          
+          // 检查元素是否还在 DOM 中
+          if (!document.body.contains(element)) {
+              console.error('element 不在 DOM 中');
+              return;
+          }
+
+          // 移除光标
+          const cursor = element.querySelector('.streaming-cursor');
+          if (cursor) cursor.remove();
+
+          // 移除流式标记
+          element.classList.remove('streaming-message');
+
+          // 获取内容容器
+          const chatContent = element.querySelector('.chat-content');
+          
+          if (!chatContent) {
+              console.error('找不到 .chat-content');
+              console.log('当前 element.innerHTML:', element.innerHTML);
+              
+              // 尝试重新创建内容容器
+              const bubble = element.querySelector('.chat-bubble');
+              if (bubble) {
+                  const newChatContent = document.createElement('div');
+                  newChatContent.className = 'chat-content prose prose-sm max-w-none';
+                  bubble.innerHTML = '';
+                  bubble.appendChild(newChatContent);
+                  
+                  // 使用新创建的容器
+                  if (typeof processMarkdownWithMath === 'function') {
+                      newChatContent.innerHTML = processMarkdownWithMath(content);
+                  } else if (typeof marked !== 'undefined') {
+                      newChatContent.innerHTML = marked.parse(content);
+                  } else {
+                      newChatContent.textContent = content;
+                  }
+                  
+                  if (typeof renderMathFormulas === 'function') {
+                      renderMathFormulas(newChatContent);
+                  }
+              }
+              return;
+          }
+
+          try {
+              if (typeof processMarkdownWithMath === 'function') {
+                  chatContent.innerHTML = processMarkdownWithMath(content);
+              } else if (typeof marked !== 'undefined') {
+                  chatContent.innerHTML = marked.parse(content);
+              } else {
+                  chatContent.textContent = content;
+              }
+              
+              if (typeof renderMathFormulas === 'function') {
+                  renderMathFormulas(chatContent);
+              }
+              
+              console.log('渲染完成');
+          } catch (e) {
+              console.error('渲染错误:', e);
+              chatContent.textContent = content;
+          }
+
+          if (els.chatHistory) {
+              els.chatHistory.scrollTop = els.chatHistory.scrollHeight;
+          }
+          
+          console.log('=== finalizeStreamingMessage 结束 ===');
+      }
+
+      // 统一的 Markdown 和公式处理函数
+      function processMarkdownWithMath(text) {
+          let processedText = text;
+          const mathBlocks = [];
+          const mathInlines = [];
+
+          // 1. 保护公式内容，避免被 Markdown 破坏
+          
+          // 保护块级公式 \[...\]
+          processedText = processedText.replace(/\\\[([\s\S]*?)\\\]/g, (match, formula) => {
+              const index = mathBlocks.length;
+              mathBlocks.push(formula);
+              return `%%MATHBLOCK${index}%%`;
+          });
+
+          // 保护行内公式 \(...\)
+          processedText = processedText.replace(/\\\(([\s\S]*?)\\\)/g, (match, formula) => {
+              const index = mathInlines.length;
+              mathInlines.push(formula);
+              return `%%MATHINLINE${index}%%`;
+          });
+
+          // 保护已有的 $$...$$ 块级公式
+          processedText = processedText.replace(/\$\$([\s\S]*?)\$\$/g, (match, formula) => {
+              const index = mathBlocks.length;
+              mathBlocks.push(formula);
+              return `%%MATHBLOCK${index}%%`;
+          });
+
+          // 保护已有的 $...$ 行内公式（注意不要匹配 $$）
+          processedText = processedText.replace(
+              /(?<!\$)\$([^\$\n]+?)\$(?!\$)/g,
+              (match, formula) => {
+                  const index = mathInlines.length;
+                  mathInlines.push(formula);
+                  return `%%MATHINLINE${index}%%`;
+              }
+          );
+
+          // 2. 处理链接
+          processedText = processedText.replace(
+              /\[查看原文\]\((https?:\/\/[^\s\)]+)\)/g,
+              '<a href="$1" target="_blank" rel="noopener noreferrer" class="text-blue-600 hover:text-blue-800 underline">[查看原文]</a>'
+          );
+
+          // 3. 使用 marked 解析 Markdown
+          let contentHtml = marked.parse(processedText);
+
+          // 4. 恢复公式
+          mathBlocks.forEach((formula, index) => {
+              contentHtml = contentHtml.replace(
+                  `%%MATHBLOCK${index}%%`,
+                  `<div class="math-block">$$${formula}$$</div>`
+              );
+              // 也处理被 <p> 包裹的情况
+              contentHtml = contentHtml.replace(
+                  `<p>%%MATHBLOCK${index}%%</p>`,
+                  `<div class="math-block">$$${formula}$$</div>`
+              );
+          });
+
+          mathInlines.forEach((formula, index) => {
+              contentHtml = contentHtml.replace(
+                  `%%MATHINLINE${index}%%`,
+                  `<span class="math-inline">$${formula}$</span>`
+              );
+          });
+
+          return contentHtml;
+      }
+
+      // 数学公式渲染函数
+      function renderMathFormulas(element) {
+          if (!element) return;
+
+          if (typeof renderMathInElement === 'undefined') {
+              console.warn('KaTeX auto-render 未加载');
+              return;
+          }
+
+          try {
+              renderMathInElement(element, {
+                  delimiters: [
+                      { left: '$$', right: '$$', display: true },
+                      { left: '$', right: '$', display: false },
+                  ],
+                  throwOnError: false,
+                  strict: false,
+                  trust: true,
+                  ignoredTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code'],
+              });
+          } catch (error) {
+              console.error('KaTeX 渲染错误:', error);
+          }
+      }
+
+      function addMessageToChat(role, text) {
+        const div = document.createElement('div');
+        div.className = 'flex w-full ' + (role === 'user' ? 'justify-end' : '');
+
+        const avatar =
+            role === 'user'
+                ? `<div class="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center ml-2 flex-shrink-0 order-2"><i class="fa-solid fa-user text-gray-600 text-sm"></i></div>`
+                : `<div class="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center mr-2 flex-shrink-0"><i class="fa-solid fa-robot text-blue-600 text-sm"></i></div>`;
+
+        const bubbleClass =
+            role === 'user'
+                ? 'bg-blue-600 text-white rounded-l-lg rounded-br-lg'
+                : 'bg-white text-gray-800 border border-gray-100 rounded-r-lg rounded-bl-lg';
+
+        if (role === 'assistant') {
+            // 使用统一的处理函数
+            const contentHtml = processMarkdownWithMath(text);
+
+            div.innerHTML = `
+                ${avatar}
+                <div class="${bubbleClass} p-3 shadow-sm chat-bubble text-sm">
+                    <div class="chat-content prose prose-sm max-w-none">
+                        ${contentHtml}
+                    </div>
+                </div>
+            `;
+        } else {
+            // 用户消息
+            div.innerHTML = `
+                <div class="${bubbleClass} p-3 shadow-sm chat-bubble text-sm">
+                    <div class="chat-content">
+                        ${escapeHtml(text)}
+                    </div>
+                </div>
+                ${avatar}
+            `;
+        }
+
+        els.chatHistory.appendChild(div);
+
+        // 渲染数学公式
+        if (role === 'assistant') {
+            const contentDiv = div.querySelector('.chat-content');
+            if (contentDiv) {
+                renderMathFormulas(contentDiv);
+            }
+        }
+
+        // 滚动到底部
+        els.chatHistory.scrollTop = els.chatHistory.scrollHeight;
+    }
+
+      // HTML 转义函数
+      function escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+      }
+
+      
+      function showTypingIndicator() {
+        const div = document.createElement('div');
+        div.id = 'typing-indicator';
+        div.className = 'flex w-full';
+        div.innerHTML = `
+                <div class="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center mr-2 flex-shrink-0">
+                    <i class="fa-solid fa-robot text-blue-600 text-sm"></i>
+                </div>
+                <div class="bg-white p-4 rounded-r-lg rounded-bl-lg shadow-sm border border-gray-100">
+                    <div class="typing-indicator">
+                        <span></span><span></span><span></span>
+                    </div>
+                </div>
+            `;
+        els.chatHistory.appendChild(div);
+        els.chatHistory.scrollTop = els.chatHistory.scrollHeight;
+      }
+
+      function removeTypingIndicator() {
+        const indicator = document.getElementById('typing-indicator');
+        if (indicator) indicator.remove();
+      }
+
+      // Handle Send Message - 使用保存的引用
+      async function handleSendMessage() {
+          const text = els.chatInput.value.trim();
+          if (!text) return;
+
+          if (!state.fullText && state.chatHistory.length < 3) {
+              alert('请先上传论文 PDF！');
+              return;
+          }
+
+          els.chatInput.value = '';
+          els.sendBtn.disabled = true;
+
+          // 添加用户消息
+          addMessageToChat('user', text);
+          state.chatHistory.push({ role: 'user', content: text });
+
+          // 创建流式消息容器
+          const streamingElement = createStreamingMessage();
+          const renderer = createDebouncedRenderer(streamingElement, 50);
+          
+          // 保存 chatContent 引用
+          const chatContent = renderer.getChatContent();
+          
+          let isCompleted = false;
+
+          try {
+              await callDeepSeekAPIStream(
+                  state.chatHistory,
+                  // onChunk
+                  (chunk, fullContent) => {
+                      if (!isCompleted) {
+                          renderer.update(fullContent);
+                      }
+                  },
+                  // onComplete
+                  (finalContent) => {
+                      if (isCompleted) {
+                          console.warn('onComplete 重复调用，跳过');
+                          return;
+                      }
+                      isCompleted = true;
+                      
+                      console.log('onComplete 开始处理');
+                      
+                      // 先销毁渲染器，停止所有 setTimeout
+                      renderer.destroy();
+                      
+                      // 移除光标
+                      const cursor = streamingElement.querySelector('.streaming-cursor');
+                      if (cursor) cursor.remove();
+                      
+                      // 移除流式标记
+                      streamingElement.classList.remove('streaming-message');
+                      
+                      // 使用保存的 chatContent 引用
+                      if (chatContent) {
+                          try {
+                              // 处理 Markdown 和公式
+                              if (typeof processMarkdownWithMath === 'function') {
+                                  chatContent.innerHTML = processMarkdownWithMath(finalContent);
+                              } else if (typeof marked !== 'undefined') {
+                                  chatContent.innerHTML = marked.parse(finalContent);
+                              } else {
+                                  chatContent.textContent = finalContent;
+                              }
+                              
+                              // 渲染数学公式
+                              if (typeof renderMathFormulas === 'function') {
+                                  renderMathFormulas(chatContent);
+                              } else if (typeof renderMathInElement !== 'undefined') {
+                                  renderMathInElement(chatContent, {
+                                      delimiters: [
+                                          { left: '$$', right: '$$', display: true },
+                                          { left: '$', right: '$', display: false },
+                                          { left: '\\[', right: '\\]', display: true },
+                                          { left: '\\(', right: '\\)', display: false },
+                                      ],
+                                      throwOnError: false
+                                  });
+                              }
+                              
+                              console.log('渲染完成');
+                          } catch (e) {
+                              console.error('渲染错误:', e);
+                              chatContent.textContent = finalContent;
+                          }
+                      } else {
+                          console.error('chatContent 引用丢失');
+                      }
+                      
+                      state.chatHistory.push({ role: 'assistant', content: finalContent });
+                      
+                      if (els.chatHistory) {
+                          els.chatHistory.scrollTop = els.chatHistory.scrollHeight;
+                      }
+                  },
+                  // onError
+                  (error) => {
+                      if (isCompleted) return;
+                      isCompleted = true;
+                      
+                      renderer.destroy();
+                      if (streamingElement && streamingElement.parentNode) {
+                          streamingElement.remove();
+                      }
+                      addMessageToChat('assistant', `⚠️ 错误: ${error.message}`);
+                  }
+              );
+          } catch (error) {
+              if (!isCompleted) {
+                  renderer.destroy();
+                  if (streamingElement && streamingElement.parentNode) {
+                      streamingElement.remove();
+                  }
+                  addMessageToChat('assistant', `⚠️ 错误: ${error.message}`);
+              }
+          } finally {
+              els.sendBtn.disabled = false;
+              els.chatInput.focus();
+          }
+      }
+
+      // 手动渲染公式的函数（可在需要时调用）
+      function renderMath(element) {
+        if (typeof renderMathInElement !== 'undefined') {
+          renderMathInElement(element, {
+            delimiters: [
+              { left: '$$', right: '$$', display: true },
+              { left: '$', right: '$', display: false },
+              { left: '\\[', right: '\\]', display: true },
+              { left: '\\(', right: '\\)', display: false },
+            ],
+            throwOnError: false,
+            strict: false,
+            trust: true,
+          });
+        }
+      }
+
+      // 检查依赖是否加载
+      document.addEventListener('DOMContentLoaded', function () {
+        initNotes();
+
+        // 检查 marked
+        if (typeof marked === 'undefined') {
+          console.error('marked.js 未加载！');
+        } else {
+          marked.setOptions({
+            breaks: true,
+            gfm: true,
+            headerIds: false,
+            mangle: false,
+          });
+          console.log('marked.js 已加载');
+        }
+
+        // 检查 KaTeX
+        if (typeof katex === 'undefined') {
+          console.error('KaTeX 未加载！');
+        } else {
+          console.log('KaTeX 已加载');
+        }
+
+        // 检查 renderMathInElement
+        if (typeof renderMathInElement === 'undefined') {
+          console.warn('KaTeX auto-render 未加载，将使用手动渲染');
+        } else {
+          console.log('KaTeX auto-render 已加载');
+        }
+      });
+
+      // 发送按钮点击事件
+      els.sendBtn.addEventListener('click', handleSendMessage);
+
+      // 输入框回车发送（Shift+Enter 换行）
+      els.chatInput.addEventListener('keypress', e => {
+        if (e.key === 'Enter' && !e.shiftKey) {
+          e.preventDefault();
+          handleSendMessage();
+        }
+      });
+
+      els.chatInput.addEventListener('blur', () => {
+        els.chatInput.parentElement.classList.remove('ring-2', 'ring-blue-500');
+      });
+
+      // 创建流式消息容器 - 添加 ID 方便调试
+      function createStreamingMessage() {
+          const div = document.createElement('div');
+          const messageId = 'streaming-' + Date.now();
+          div.id = messageId;
+          div.className = 'flex w-full streaming-message';
+          div.innerHTML = `
+              <div class="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center mr-2 flex-shrink-0">
+                  <i class="fa-solid fa-robot text-blue-600 text-sm"></i>
+              </div>
+              <div class="bg-white text-gray-800 border border-gray-100 rounded-r-lg rounded-bl-lg p-3 shadow-sm chat-bubble text-sm max-w-[85%]">
+                  <div class="chat-content prose prose-sm max-w-none"></div>
+                  <span class="streaming-cursor">▊</span>
+              </div>
+          `;
+          
+          console.log('创建流式消息元素:', messageId);
+          els.chatHistory.appendChild(div);
+          els.chatHistory.scrollTop = els.chatHistory.scrollHeight;
+
+          return div;
+      }
+
+      // 更新流式消息内容
+      function updateStreamingMessage(element, content) {
+          const markdownBody = element.querySelector('.markdown-body');
+          
+          // 使用 marked 渲染 Markdown
+          if (typeof marked !== 'undefined') {
+              markdownBody.innerHTML = marked.parse(content);
+          } else {
+              markdownBody.textContent = content;
+          }
+          
+          // 滚动到底部
+          els.chatHistory.scrollTop = els.chatHistory.scrollHeight;
+      }
+
+      // 完成流式消息
+      function finalizeStreamingMessage(element, content) {
+          // 移除光标
+          const cursor = element.querySelector('.streaming-cursor');
+          if (cursor) cursor.remove();
+          
+          // 移除流式标记
+          element.classList.remove('streaming-message');
+          
+          // 最终渲染（包括数学公式）
+          const markdownBody = element.querySelector('.markdown-body');
+          if (typeof marked !== 'undefined') {
+              markdownBody.innerHTML = marked.parse(content);
+          }
+          
+          // 渲染数学公式
+          renderMath(markdownBody);
+          
+          // 滚动到底部
+          els.chatHistory.scrollTop = els.chatHistory.scrollHeight;
+      }
+
+      function renderMindmap(markdown) {
+        if (!window.markmap) {
+          console.error('Markmap library not loaded');
+          alert('思维导图组件加载失败，请检查网络或刷新页面');
+          return;
+        }
+
+        const { Transformer, Markmap } = window.markmap;
+
+        if (!Transformer) {
+          console.error('Transformer not found');
+          alert('思维导图解析器加载失败');
+          return;
+        }
+
+        try {
+          const transformer = new Transformer();
+          const { root } = transformer.transform(markdown);
+
+          const svgEl = document.getElementById('markmap');
+          svgEl.innerHTML = ''; // 清空之前的内容
+
+          // 设置SVG样式
+          svgEl.style.background = '#f9fafb';
+
+          // 创建Markmap实例并设置选项
+          markmapInstance = Markmap.create(
+            svgEl,
+            {
+              duration: 500,
+              nodeMinHeight: 16,
+              spacingVertical: 8,
+              spacingHorizontal: 50,
+              paddingX: 6, // 减小节点内边距
+              maxWidth: 200, // ⬅️ 限制节点宽度，强制换行
+              autoFit: true,
+              color: node => {
+                // 设置颜色方案
+                const colors = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6'];
+                return colors[node.depth % colors.length];
+              },
+              style: node => {
+                // 设置文字样式
+                return {
+                  fontSize: Math.max(12, 16 - node.depth * 1.5),
+                  fontWeight: node.depth === 0 ? 'bold' : 'normal',
+                };
+              },
+            },
+            root
+          );
+
+          // 强制重绘
+          setTimeout(() => {
+            if (markmapInstance) {
+              markmapInstance.fit();
+            }
+          }, 100);
+        } catch (error) {
+          console.error('Mindmap rendering error:', error);
+          alert('思维导图渲染失败: ' + error.message);
+        }
+      }
+
+      // Handle Summary Generation
+      els.generateSummaryBtn.addEventListener('click', async () => {
+        if (!state.fullText) {
+          alert('请先上传论文 PDF');
+          return;
+        }
+
+        els.generateSummaryBtn.disabled = true;
+        els.generateSummaryBtn.innerHTML = `<i class="fa-solid fa-spinner fa-spin mr-2"></i> 正在生成...`;
+
+        const summaryPrompt = `请用中文总结以下学术论文的核心内容，要求：
+            1. 用简洁明了的语言概括研究问题
+            2. 简要说明使用的方法或技术路线
+            3. 总结主要发现或贡献
+            4. 字数控制在500字左右
+
+            论文内容片段：
+            ${state.fullText.substring(0, 4000)}`;
+
+        try {
+          const messages = [
+            {
+              role: 'system',
+              content: '你是一个专业的学术助手，擅长用简洁清晰的语言总结论文内容。',
+            },
+            { role: 'user', content: summaryPrompt },
+          ];
+
+          const summary = await callDeepSeekAPI(messages, 800);
+
+          els.summaryContent.innerHTML = marked.parse(summary);
+        } catch (error) {
+          els.summaryContent.innerHTML = `<div class="text-red-500 p-4 bg-red-50 rounded">生成失败: ${error.message}</div>`;
+        } finally {
+          els.generateSummaryBtn.disabled = false;
+          els.generateSummaryBtn.innerHTML = `<i class="fa-solid fa-wand-magic-sparkles mr-2"></i> 重新生成`;
+        }
+      });
+
+      // Handle Mindmap Generation
+      let markmapInstance = null;
+
+      els.generateMindmapBtn.addEventListener('click', async () => {
+        if (!state.fullText) {
+          alert('请先上传论文 PDF');
+          return;
+        }
+
+        els.generateMindmapBtn.disabled = true;
+        els.mindmapLoading.classList.remove('hidden');
+        els.mindmapEmpty.classList.add('hidden');
+
+        // 1. Get Markdown from AI
+        const mindmapPrompt = `请分析这篇论文的逻辑结构，并生成一个用于绘制思维导图的 Markdown 列表。
+            要求：
+            1. 根节点是论文标题（或者"论文概览"）。
+            2. 包含 "摘要/背景", "方法", "主要结果", "结论" 等主要分支。
+            3. 使用 Markdown 的列表语法 (- 或 *)，通过缩进表示层级。
+            4. 内容要精炼概括，不要长篇大论。
+            5. 只输出 Markdown 代码块或纯文本列表，不要包含其他解释性文字。
+
+            论文前 5000 字内容：
+            ${state.fullText.substring(0, 5000)}`;
+
+        try {
+          const messages = [
+            {
+              role: 'system',
+              content: '你是一个思维导图生成助手，请输出清晰的 Markdown 列表格式数据。',
+            },
+            { role: 'user', content: mindmapPrompt },
+          ];
+
+          let markdown = await callDeepSeekAPI(messages, 1500);
+
+          // Clean up markdown (remove ```markdown wrapper if exists)
+          markdown = markdown
+            .replace(/```markdown/g, '')
+            .replace(/```/g, '')
+            .trim();
+
+          // 2. Render Markmap
+          renderMindmap(markdown);
+        } catch (error) {
+          console.error('Mindmap error:', error);
+          alert('生成思维导图失败: ' + error.message);
+          els.mindmapEmpty.classList.remove('hidden');
+        } finally {
+          els.generateMindmapBtn.disabled = false;
+          els.mindmapLoading.classList.add('hidden');
+        }
+      });
+
+      // 论文推荐功能 - 修复版本
+      function renderRecommendedPapers(response, isFallback = false) {
+        // 调试日志
+        console.log('收到响应:', response);
+        console.log('论文数量:', response.papers ? response.papers.length : 0);
+
+        const papers = response.papers || [];
+        const keywordsUsed = response.keywords_used || [];
+        const candidatesFound = response.candidates_found || 0;
+        const method = response.method || 'search';
+
+        if (!papers || papers.length === 0) {
+          els.recommendationsContent.innerHTML = `
+                    <div class="text-center text-gray-400 mt-10">
+                        <i class="fa-solid fa-search text-4xl mb-3 opacity-20"></i>
+                        <p class="text-sm">未找到相关论文</p>
+                        <p class="text-xs text-gray-300 mt-2">搜索关键词: ${
+                          keywordsUsed.join(', ') || '无'
+                        }</p>
+                    </div>
+                `;
+          return;
+        }
+
+        let html = '';
+
+        if (isFallback) {
+          html = `
+                    <div class="mb-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+                        <div class="flex items-center">
+                            <i class="fa-solid fa-triangle-exclamation text-yellow-600 mr-2"></i>
+                            <span class="text-yellow-700 text-sm">使用示例数据供参考，真实API可能暂时受限</span>
+                        </div>
+                    </div>
+                `;
+        } else {
+          html = `
+                    <div class="mb-4 p-4 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg border border-blue-100">
+                        <div class="flex items-start justify-between">
+                            <div class="flex-1">
+                                <p class="text-sm text-blue-800 font-medium mb-2">
+                                    <i class="fa-solid fa-magic mr-2"></i>
+                                    ${
+                                      method === 'semantic_similarity'
+                                        ? '语义相似度推荐'
+                                        : '关键词搜索推荐'
+                                    }
+                                </p>
+                                <div class="flex flex-wrap gap-1.5 mb-2">
+                                    ${keywordsUsed
+                                      .map(
+                                        keyword =>
+                                          `<span class="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">${keyword}</span>`
+                                      )
+                                      .join('')}
+                                </div>
+                                <p class="text-xs text-blue-600">
+                                    <i class="fa-solid fa-database mr-1"></i>
+                                    从 ${candidatesFound} 篇候选论文中筛选出 ${
+            papers.length
+          } 篇最相关论文
+                                </p>
+                            </div>
+                            <div class="text-right">
+                                <span class="inline-flex items-center text-xs bg-green-100 text-green-700 px-2 py-1 rounded-full">
+                                    <i class="fa-solid fa-check-circle mr-1"></i>
+                                    ${response.source || 'OpenAlex'}
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+                `;
+        }
+
+        papers.forEach((paper, index) => {
+          // 处理作者格式（可能是对象数组或字符串数组）
+          let authors = '未知作者';
+          if (paper.authors && paper.authors.length > 0) {
+            if (typeof paper.authors[0] === 'string') {
+              authors = paper.authors.join(', ');
+            } else {
+              authors = paper.authors.map(a => a.name || a).join(', ');
+            }
+          }
+
+          const year = paper.year || '未知年份';
+          const citationCount = paper.citationCount || 0;
+          const venue = paper.venue || '';
+          const abstract = paper.abstract
+            ? paper.abstract.length > 200
+              ? paper.abstract.substring(0, 200) + '...'
+              : paper.abstract
+            : '暂无摘要';
+
+          // 使用后端返回的相关度分数
+          const similarityScore = paper.similarity;
+          const relevanceScore = paper.relevance;
+
+          // 格式化相关度显示
+          let relevanceDisplay = '';
+          if (relevanceScore !== undefined && relevanceScore !== null) {
+            const relevancePercent = Math.round(relevanceScore * 100);
+            const similarityPercent =
+              similarityScore !== undefined ? Math.round(similarityScore * 100) : null;
+
+            let scoreColor = 'text-gray-500';
+            let bgColor = 'bg-gray-100';
+            if (relevancePercent >= 70) {
+              scoreColor = 'text-green-700';
+              bgColor = 'bg-green-100';
+            } else if (relevancePercent >= 50) {
+              scoreColor = 'text-blue-700';
+              bgColor = 'bg-blue-100';
+            } else if (relevancePercent >= 30) {
+              scoreColor = 'text-yellow-700';
+              bgColor = 'bg-yellow-100';
+            }
+
+            relevanceDisplay = `
+                        <div class="flex items-center gap-3">
+                            <span class="text-xs ${bgColor} ${scoreColor} px-2 py-1 rounded-full font-medium">
+                                <i class="fa-solid fa-bullseye mr-1"></i>
+                                综合相关度: ${relevancePercent}%
+                            </span>
+                            ${
+                              similarityPercent !== null
+                                ? `
+                                <span class="text-xs text-gray-500">
+                                    <i class="fa-solid fa-brain mr-1"></i>
+                                    语义相似度: ${similarityPercent}%
+                                </span>
+                            `
+                                : ''
+                            }
+                        </div>
+                    `;
+          } else {
+            relevanceDisplay = `
+                        <span class="text-xs text-gray-400">
+                            <i class="fa-solid fa-chart-line mr-1"></i>
+                            相关度排名: #${index + 1}
+                        </span>
+                    `;
+          }
+
+          html += `
+                    <div class="bg-white border border-gray-200 rounded-lg p-4 mb-4 shadow-sm hover:shadow-md transition-shadow">
+                        <div class="flex justify-between items-start mb-2">
+                            <h4 class="font-semibold text-gray-800 text-sm flex-1 leading-snug">${
+                              paper.title || '无标题'
+                            }</h4>
+                            <span class="bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded-full ml-2 flex-shrink-0">#${
+                              index + 1
+                            }</span>
+                        </div>
+
+                        <div class="text-xs text-gray-600 mb-2">
+                            <i class="fa-solid fa-user-group mr-1"></i> ${authors}
+                        </div>
+
+                        <div class="flex flex-wrap gap-3 text-xs text-gray-500 mb-3">
+                            <span><i class="fa-solid fa-calendar mr-1"></i> ${year}</span>
+                            <span><i class="fa-solid fa-quote-right mr-1"></i> ${citationCount} 引用</span>
+                            ${
+                              venue
+                                ? `<span><i class="fa-solid fa-book mr-1"></i> ${venue}</span>`
+                                : ''
+                            }
+                        </div>
+
+                        <p class="text-xs text-gray-700 mb-3 leading-relaxed bg-gray-50 p-2 rounded">${abstract}</p>
+
+                        <div class="flex justify-between items-center pt-2 border-t border-gray-100">
+                            ${relevanceDisplay}
+                            <div class="flex gap-2">
+                                ${
+                                  paper.url
+                                    ? `
+                                    <a href="${paper.url}"
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        style="color: white !important; background-color: #2563eb;"
+                                        class="inline-flex items-center text-xs bg-blue-600 text-white px-3 py-1.5 rounded hover:bg-blue-700 transition-colors shadow-sm">
+                                            <i class="fa-solid fa-external-link-alt mr-1.5"></i> 查看原文
+                                    </a>
+                                `
+                                    : ''
+                                }
+                            </div>
+                        </div>
+                    </div>
+                `;
+        });
+
+        els.recommendationsContent.innerHTML = html;
+      }
+
+      // 事件处理函数 - 修复版本
+      els.generateRecommendationsBtn.addEventListener('click', async () => {
+        if (!state.fullText) {
+          alert('请先上传论文 PDF');
+          return;
+        }
+
+        els.generateRecommendationsBtn.disabled = true;
+        els.generateRecommendationsBtn.innerHTML = `<i class="fa-solid fa-spinner fa-spin mr-2"></i> 搜索中...`;
+
+        // 显示加载状态
+        els.recommendationsContent.innerHTML = `
+                <div class="text-center py-10">
+                    <i class="fa-solid fa-spinner fa-spin text-4xl text-blue-500 mb-4"></i>
+                    <p class="text-gray-600">正在使用语义相似度搜索相关论文...</p>
+                    <p class="text-xs text-gray-400 mt-2">这可能需要几秒钟</p>
+                </div>
+            `;
+
+        try {
+          const response = await fetch('/api/recommend_papers', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              text: state.fullText.substring(0, 3000),
+              title: state.paperTitle || '',
+              max_results: 10,
+            }),
+          });
+
+          const result = await response.json();
+
+          console.log('推荐API响应:', result);
+          console.log('papers数量:', result.papers ? result.papers.length : 0);
+
+          if (!response.ok) {
+            if (result.fallback_used && result.papers) {
+              state.recommendedPapers = result.papers;
+              // 传递整个 result 对象
+              renderRecommendedPapers(result, true);
+            } else {
+              throw new Error(result.error || `HTTP ${response.status}`);
+            }
+          } else if (result.success && result.papers && result.papers.length > 0) {
+            state.recommendedPapers = result.papers;
+            // 传递整个 result 对象
+            renderRecommendedPapers(result, false);
+            console.log(`成功找到 ${result.papers.length} 篇相关论文`);
+          } else if (result.success && (!result.papers || result.papers.length === 0)) {
+            // 搜索成功但没有结果
+            els.recommendationsContent.innerHTML = `
+                        <div class="text-center text-gray-400 mt-10">
+                            <i class="fa-solid fa-search text-4xl mb-3 opacity-20"></i>
+                            <p class="text-sm">未找到相关论文</p>
+                            <p class="text-xs text-gray-300 mt-2">搜索关键词: ${
+                              (result.keywords_used || []).join(', ') || '无'
+                            }</p>
+                        </div>
+                    `;
+          } else {
+            throw new Error(result.error || '未知错误');
+          }
+        } catch (error) {
+          console.error('Recommendation error:', error);
+          els.recommendationsContent.innerHTML = `
+                    <div class="text-center text-gray-400 mt-10">
+                        <i class="fa-solid fa-exclamation-triangle text-4xl mb-3 opacity-20"></i>
+                        <p class="text-sm">暂时无法获取推荐</p>
+                        <p class="text-xs text-gray-300 mt-2">${error.message}</p>
+                        <button onclick="location.reload()" class="mt-3 text-xs bg-gray-200 text-gray-700 px-3 py-1 rounded">
+                            <i class="fa-solid fa-refresh mr-1"></i> 重试
+                        </button>
+                    </div>
+                `;
+        } finally {
+          els.generateRecommendationsBtn.disabled = false;
+          els.generateRecommendationsBtn.innerHTML = `<i class="fa-solid fa-wand-magic-sparkles mr-2"></i> 生成推荐`;
+        }
+      });
+
+      els.generateRecommendationsBtn.addEventListener('click', async () => {
+        if (!state.fullText) {
+          alert('请先上传论文 PDF');
+          return;
+        }
+
+        els.generateRecommendationsBtn.disabled = true;
+        els.generateRecommendationsBtn.innerHTML = `<i class="fa-solid fa-spinner fa-spin mr-2"></i> 搜索中...`;
+
+        try {
+          const response = await fetch('/api/recommend_papers', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              text: state.fullText.substring(0, 2000), // 限制文本长度
+              max_results: 5,
+            }),
+          });
+
+          const result = await response.json();
+
+          if (!response.ok) {
+            // 检查是否有备选数据
+            if (result.fallback_used && result.papers) {
+              // 有备选数据，显示警告但继续显示结果
+              showFallbackWarning(result.error);
+              state.recommendedPapers = result.papers;
+              renderRecommendedPapers(result.papers, '示例查询（API暂时不可用）', true);
+            } else {
+              throw new Error(result.error || `HTTP ${response.status}`);
+            }
+          } else if (result.success) {
+            // 正常情况
+            state.recommendedPapers = result.papers;
+            renderRecommendedPapers(result.papers, result.query_used, false);
+          } else {
+            throw new Error(result.error || '未知错误');
+          }
+        } catch (error) {
+          console.error('Recommendation error:', error);
+          // 即使是网络错误也尝试显示示例数据
+          els.recommendationsContent.innerHTML = `
+                    <div class="bg-yellow-50 border border-yellow-200 rounded-lg p-4 text-yellow-700">
+                        <div class="flex items-center mb-2">
+                            <i class="fa-solid fa-triangle-exclamation mr-2"></i>
+                            <strong>网络连接问题</strong>
+                        </div>
+                        <p class="mb-3">${error.message}</p>
+                        <p class="text-sm mb-3">显示示例论文数据供参考：</p>
+                        ${renderExamplePapers()}
+                    </div>
+                `;
+        } finally {
+          els.generateRecommendationsBtn.disabled = false;
+          els.generateRecommendationsBtn.innerHTML = `<i class="fa-solid fa-wand-magic-sparkles mr-2"></i> 生成推荐`;
+        }
+      });
+
+      function showFallbackWarning(errorMessage) {
+        // 显示临时警告
+        const warningDiv = document.createElement('div');
+        warningDiv.className = 'mb-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg';
+        warningDiv.innerHTML = `
+                <div class="flex items-center">
+                    <i class="fa-solid fa-triangle-exclamation text-yellow-600 mr-2"></i>
+                    <span class="text-yellow-700 text-sm">${errorMessage}，显示示例数据</span>
+                </div>
+            `;
+        els.recommendationsContent.appendChild(warningDiv);
+
+        // 3秒后自动消失
+        setTimeout(() => {
+          warningDiv.remove();
+        }, 5000);
+      }
+
+      function renderExamplePapers() {
+        const examplePapers = [
+          {
+            title: 'Attention Is All You Need',
+            authors: [{ name: 'Ashish Vaswani' }, { name: 'Noam Shazeer' }],
+            year: 2017,
+            abstract: '提出了Transformer架构，完全基于注意力机制，摒弃了循环和卷积网络...',
+            citationCount: 45000,
+            venue: 'NeurIPS',
+          },
+          {
+            title: 'BERT: Pre-training of Deep Bidirectional Transformers',
+            authors: [{ name: 'Jacob Devlin' }, { name: 'Ming-Wei Chang' }],
+            year: 2018,
+            abstract: '引入了BERT模型，通过预训练深度双向Transformer进行语言理解...',
+            citationCount: 35000,
+            venue: 'NAACL',
+          },
+        ];
+
+        return examplePapers
+          .map(
+            (paper, index) => `
+                <div class="bg-white border border-gray-200 rounded-lg p-3 mb-3">
+                    <h4 class="font-semibold text-sm">${paper.title}</h4>
+                    <p class="text-xs text-gray-600">${paper.authors
+                      .map(a => a.name)
+                      .join(', ')} · ${paper.year}</p>
+                    <p class="text-xs text-gray-700 mt-1">${paper.abstract}</p>
+                </div>
+            `
+          )
+          .join('');
+      }
+
+      // 作者分析功能
+      els.analyzeAuthorsBtn.addEventListener('click', async () => {
+        if (!state.fullText) {
+          alert('请先上传论文 PDF');
+          return;
+        }
+
+        els.analyzeAuthorsBtn.disabled = true;
+        els.analyzeAuthorsBtn.innerHTML = `<i class="fa-solid fa-spinner fa-spin mr-2"></i> 分析中...`;
+
+        try {
+          const response = await fetch('/api/analyze_authors', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              authors: state.paperAuthors,
+              title: state.paperTitle, // 新增：传递论文标题
+            }),
+          });
+
+          const result = await response.json();
+
+          if (!response.ok) {
+            if (result.fallback_data) {
+              // 使用备选数据
+              state.authorsAnalysis = result.fallback_data;
+              renderAuthorsAnalysis(result.fallback_data, true);
+            } else {
+              throw new Error(result.error || `HTTP ${response.status}`);
+            }
+          } else if (result.success) {
+            state.authorsAnalysis = result;
+            renderAuthorsAnalysis(result, false);
+          } else {
+            throw new Error(result.error || '未知错误');
+          }
+        } catch (error) {
+          console.error('作者分析错误:', error);
+          els.authorsContent.innerHTML = `
+                    <div class="text-center text-gray-400 mt-10">
+                        <i class="fa-solid fa-exclamation-triangle text-4xl mb-3 opacity-20"></i>
+                        <p class="text-sm">作者分析失败</p>
+                        <p class="text-xs text-gray-300 mt-2">${error.message}</p>
+                    </div>
+                `;
+        } finally {
+          els.analyzeAuthorsBtn.disabled = false;
+          els.analyzeAuthorsBtn.innerHTML = `<i class="fa-solid fa-user-graduate mr-2"></i> 分析作者`;
+        }
+      });
+
+      function renderAuthorsAnalysis(data, isFallback) {
+        let html = '';
+
+        if (isFallback) {
+          html = `
+                    <div class="mb-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+                        <div class="flex items-center">
+                            <i class="fa-solid fa-triangle-exclamation text-yellow-600 mr-2"></i>
+                            <span class="text-yellow-700 text-sm">部分作者信息获取失败，显示可用数据</span>
+                        </div>
+                    </div>
+                `;
+        }
+
+        // 团队概览
+        html += `
+                <div class="bg-white rounded-lg border border-gray-200 p-4 mb-4">
+                    <h3 class="font-semibold text-gray-800 mb-3 flex items-center">
+                        <i class="fa-solid fa-people-group text-blue-600 mr-2"></i>
+                        团队概览
+                    </h3>
+                    <div class="grid grid-cols-2 md:grid-cols-5 gap-3 text-center">
+                        <div class="bg-blue-50 rounded p-3">
+                            <div class="text-2xl font-bold text-blue-600">${
+                              data.authors_count
+                            }</div>
+                            <div class="text-xs text-gray-600">作者数量</div>
+                        </div>
+                        <div class="bg-green-50 rounded p-3">
+                            <div class="text-2xl font-bold text-green-600">${
+                              data.analysis.totalPapers
+                            }</div>
+                            <div class="text-xs text-gray-600">总论文数</div>
+                        </div>
+                        <div class="bg-purple-50 rounded p-3">
+                            <div class="text-2xl font-bold text-purple-600">${
+                              data.analysis.totalCitations?.toLocaleString() || 0
+                            }</div>
+                            <div class="text-xs text-gray-600">总引用数</div>
+                        </div>
+                        <div class="bg-orange-50 rounded p-3">
+                            <div class="text-2xl font-bold text-orange-600">${
+                              data.analysis.avgHIndex || 0
+                            }</div>
+                            <div class="text-xs text-gray-600">平均H指数</div>
+                        </div>
+                        <div class="bg-pink-50 rounded p-3">
+                            <div class="text-2xl font-bold text-pink-600">${
+                              Object.keys(data.analysis.institutionDistribution || {}).length
+                            }</div>
+                            <div class="text-xs text-gray-600">合作机构</div>
+                        </div>
+                    </div>
+                </div>
+            `;
+
+        // 机构分布
+        const institutions = data.analysis.institutionDistribution || {};
+        if (Object.keys(institutions).length > 0) {
+          html += `
+                    <div class="bg-white rounded-lg border border-gray-200 p-4 mb-4">
+                        <h3 class="font-semibold text-gray-800 mb-3 flex items-center">
+                            <i class="fa-solid fa-building text-indigo-600 mr-2"></i>
+                            机构分布
+                        </h3>
+                        <div class="space-y-2">
+                `;
+
+          Object.entries(institutions).forEach(([inst, count]) => {
+            const percentage = Math.round((count / data.authors_count) * 100);
+            html += `
+                        <div class="flex items-center">
+                            <div class="flex-1">
+                                <div class="text-sm text-gray-700 mb-1">${inst}</div>
+                                <div class="w-full bg-gray-200 rounded-full h-2">
+                                    <div class="bg-indigo-500 h-2 rounded-full" style="width: ${percentage}%"></div>
+                                </div>
+                            </div>
+                            <span class="ml-3 text-sm font-semibold text-gray-600">${count}人</span>
+                        </div>
+                    `;
+          });
+
+          html += `</div></div>`;
+        }
+
+        // 研究兴趣词云
+        const interests = data.analysis.researchInterests || {};
+        if (Object.keys(interests).length > 0) {
+          html += `
+                    <div class="bg-white rounded-lg border border-gray-200 p-4 mb-4">
+                        <h3 class="font-semibold text-gray-800 mb-3 flex items-center">
+                            <i class="fa-solid fa-lightbulb text-yellow-500 mr-2"></i>
+                            团队研究方向
+                        </h3>
+                        <div class="flex flex-wrap gap-2">
+                `;
+
+          Object.entries(interests).forEach(([interest, count]) => {
+            const size = count > 2 ? 'text-sm px-3 py-1.5' : 'text-xs px-2 py-1';
+            const color = count > 2 ? 'bg-blue-100 text-blue-800' : 'bg-gray-100 text-gray-700';
+            html += `<span class="${size} ${color} rounded-full">${interest} (${count})</span>`;
+          });
+
+          html += `</div></div>`;
+        }
+
+        // 作者详细信息
+        html += `
+                <div class="bg-white rounded-lg border border-gray-200 p-4 mb-4">
+                    <h3 class="font-semibold text-gray-800 mb-3 flex items-center">
+                        <i class="fa-solid fa-user-tie text-green-600 mr-2"></i>
+                        作者详情
+                    </h3>
+                    <div class="space-y-4">
+            `;
+
+        data.authors.forEach((author, index) => {
+          // 数据来源标识
+          const sourceColor =
+            author.source === 'Google Scholar'
+              ? 'bg-red-100 text-red-800'
+              : author.source === 'OpenAlex'
+              ? 'bg-blue-100 text-blue-800'
+              : 'bg-gray-100 text-gray-600';
+          const sourceLabel = author.source || '未知来源';
+
+          const successIcon = author.searchSuccess
+            ? '<i class="fa-solid fa-check-circle text-green-500 mr-1"></i>'
+            : '<i class="fa-solid fa-exclamation-circle text-yellow-500 mr-1"></i>';
+
+          // 构建作者名字链接
+          const authorNameHtml = author.url
+            ? `<a href="${author.url}" target="_blank" rel="noopener noreferrer"
+                        class="text-blue-600 hover:text-blue-800 hover:underline font-semibold">${author.name}</a>`
+            : `<span class="font-semibold">${author.name}</span>`;
+
+          html += `
+                    <div class="border border-gray-100 rounded-lg p-4 hover:bg-gray-50 transition-colors">
+                        <div class="flex justify-between items-start mb-2">
+                            <div class="flex items-center">
+                                ${successIcon}
+                                ${authorNameHtml}
+                                <span class="ml-2 text-xs px-2 py-0.5 rounded ${sourceColor}">${sourceLabel}</span>
+                            </div>
+                            <span class="bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded-full">#${
+                              index + 1
+                            }</span>
+                        </div>
+
+                        <!-- 机构信息 -->
+                        <div class="text-sm text-gray-600 mb-2">
+                            <i class="fa-solid fa-building mr-2"></i>
+                            <span class="${
+                              author.affiliation ? 'text-gray-800 font-medium' : 'text-gray-400'
+                            }">
+                                ${
+                                  author.affiliation ||
+                                  author.affiliations?.join('; ') ||
+                                  '机构信息未知'
+                                }
+                            </span>
+                        </div>
+
+                        <!-- 研究兴趣标签 -->
+                        ${
+                          author.interests && author.interests.length > 0
+                            ? `
+                            <div class="mb-3">
+                                <div class="flex flex-wrap gap-1">
+                                    ${author.interests
+                                      .slice(0, 5)
+                                      .map(
+                                        interest =>
+                                          `<span class="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded">${interest}</span>`
+                                      )
+                                      .join('')}
+                                </div>
+                            </div>
+                        `
+                            : ''
+                        }
+
+                        <!-- 统计数据 -->
+                        <div class="grid grid-cols-4 gap-2 text-xs mb-3">
+                            <div class="bg-gray-50 rounded p-2 text-center">
+                                <div class="font-semibold text-gray-800">${
+                                  author.paperCount || 0
+                                }</div>
+                                <div class="text-gray-500">论文数</div>
+                            </div>
+                            <div class="bg-gray-50 rounded p-2 text-center">
+                                <div class="font-semibold text-gray-800">${
+                                  author.citationCount?.toLocaleString() || 0
+                                }</div>
+                                <div class="text-gray-500">引用数</div>
+                            </div>
+                            <div class="bg-gray-50 rounded p-2 text-center">
+                                <div class="font-semibold text-gray-800">${
+                                  author.hIndex || 'N/A'
+                                }</div>
+                                <div class="text-gray-500">H指数</div>
+                            </div>
+                            <div class="bg-gray-50 rounded p-2 text-center">
+                                <div class="font-semibold text-gray-800">${
+                                  author.i10Index || 'N/A'
+                                }</div>
+                                <div class="text-gray-500">i10指数</div>
+                            </div>
+                        </div>
+                `;
+
+          // 近期论文
+          if (author.recentPapers && author.recentPapers.length > 0) {
+            html += `
+                        <div class="border-t pt-2">
+                            <div class="text-xs font-semibold text-gray-700 mb-2">
+                                <i class="fa-solid fa-file-lines mr-1"></i> 代表作品:
+                            </div>
+                            <div class="space-y-1.5">
+                    `;
+
+            author.recentPapers.forEach(paper => {
+              const paperTitle = paper.title || '未知标题';
+              const truncatedTitle =
+                paperTitle.length > 60 ? paperTitle.substring(0, 60) + '...' : paperTitle;
+
+              html += `
+                            <div class="text-xs text-gray-600 flex items-start">
+                                <span class="text-gray-400 mr-1">•</span>
+                                <div class="flex-1">
+                                    ${
+                                      paper.url
+                                        ? `<a href="${paper.url}" target="_blank" class="text-blue-600 hover:underline" title="${paperTitle}">${truncatedTitle}</a>`
+                                        : `<span title="${paperTitle}">${truncatedTitle}</span>`
+                                    }
+                                    <span class="text-gray-400 ml-1">(${paper.year || '?'})</span>
+                                </div>
+                            </div>
+                        `;
+            });
+
+            html += `</div></div>`;
+          }
+
+          // 作者主页按钮
+          if (author.url) {
+            html += `
+                        <div class="mt-3 pt-2 border-t border-gray-100 flex gap-2">
+                            <a href="${author.url}" target="_blank" rel="noopener noreferrer"
+                            style="color: white !important; background-color: #2563eb;"
+                            class="inline-flex items-center text-xs bg-blue-600 text-white px-3 py-1.5 rounded hover:bg-blue-700 transition-colors">
+                                <i class="fa-solid fa-external-link-alt mr-1.5"></i>
+                                Google Scholar 主页
+                            </a>
+                            ${
+                              author.orcid
+                                ? `
+                                <a href="${author.orcid}" target="_blank" rel="noopener noreferrer"
+                                style="color: white !important; background-color: #2563eb;"
+                                class="inline-flex items-center text-xs bg-green-600 text-white px-3 py-1.5 rounded hover:bg-green-700 transition-colors">
+                                    <i class="fa-brands fa-orcid mr-1.5"></i> ORCID
+                                </a>
+                            `
+                                : ''
+                            }
+                        </div>
+                    `;
+          }
+
+          html += `</div>`;
+        });
+
+        html += `</div></div>`;
+
+        els.authorsContent.innerHTML = html;
+      }
+
+      // 作者编辑功能
+      els.editAuthorsBtn.addEventListener('click', () => {
+        if (state.currentAuthors.length === 0) {
+          alert('请先进行作者分析');
+          return;
+        }
+
+        // 将当前作者列表填充到文本区域
+        const authorNames = state.currentAuthors.map(author => author.name);
+        els.authorsTextarea.value = authorNames.join('\n');
+
+        // 显示模态框
+        els.authorsEditModal.classList.remove('hidden');
+      });
+
+      // 关闭模态框
+      els.closeEditModal.addEventListener('click', closeEditModal);
+      els.cancelEdit.addEventListener('click', closeEditModal);
+
+      function closeEditModal() {
+        els.authorsEditModal.classList.add('hidden');
+      }
+
+      // 保存作者编辑
+      els.saveAuthors.addEventListener('click', async () => {
+        const authorText = els.authorsTextarea.value.trim();
+        if (!authorText) {
+          alert('请输入至少一个作者');
+          return;
+        }
+
+        const updatedAuthors = authorText
+          .split('\n')
+          .map(name => name.trim())
+          .filter(name => name.length > 0);
+
+        if (updatedAuthors.length === 0) {
+          alert('请输入有效的作者姓名');
+          return;
+        }
+
+        els.saveAuthors.disabled = true;
+        els.saveAuthors.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-2"></i> 保存中...';
+
+        try {
+          const response = await fetch('/api/update_authors', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              original_authors: state.originalAuthors,
+              updated_authors: updatedAuthors,
+            }),
+          });
+
+          const result = await response.json();
+
+          if (!response.ok) {
+            if (result.fallback_data) {
+              state.authorsAnalysis = result.fallback_data;
+              renderAuthorsAnalysis(result.fallback_data, true);
+              showNotification('作者已更新（使用示例数据）', 'success');
+            } else {
+              throw new Error(result.error || `HTTP ${response.status}`);
+            }
+          } else if (result.success) {
+            state.authorsAnalysis = result;
+            state.currentAuthors = updatedAuthors;
+            renderAuthorsAnalysis(result, false);
+            showNotification('作者信息已成功更新', 'success');
+          } else {
+            throw new Error(result.error || '未知错误');
+          }
+
+          closeEditModal();
+        } catch (error) {
+          console.error('作者更新错误:', error);
+          showNotification('更新失败: ' + error.message, 'error');
+        } finally {
+          els.saveAuthors.disabled = false;
+          els.saveAuthors.innerHTML = '<i class="fa-solid fa-check mr-2"></i> 保存并重新分析';
+        }
+      });
+
+      // 添加通知函数
+      function showNotification(message, type = 'info') {
+        const notification = document.createElement('div');
+        notification.className = `fixed top-4 right-4 z-50 p-4 rounded-lg shadow-lg text-white ${
+          type === 'success' ? 'bg-green-500' : type === 'error' ? 'bg-red-500' : 'bg-blue-500'
+        }`;
+        notification.innerHTML = `
+                <div class="flex items-center">
+                    <i class="fa-solid ${
+                      type === 'success'
+                        ? 'fa-check'
+                        : type === 'error'
+                        ? 'fa-exclamation'
+                        : 'fa-info'
+                    } mr-2"></i>
+                    <span>${message}</span>
+                </div>
+            `;
+
+        document.body.appendChild(notification);
+
+        setTimeout(() => {
+          notification.remove();
+        }, 3000);
+      }
+
+      // 点击模态框外部关闭
+      els.authorsEditModal.addEventListener('click', e => {
+        if (e.target === els.authorsEditModal) {
+          closeEditModal();
+        }
+      });
+
+      // 引用分析功能
+      els.getCitationsBtn.addEventListener('click', async () => {
+        if (!state.fullText) {
+          alert('请先上传论文 PDF');
+          return;
+        }
+
+        els.getCitationsBtn.disabled = true;
+        els.getCitationsBtn.innerHTML = `<i class="fa-solid fa-spinner fa-spin mr-2"></i> 搜索中...`;
+
+        try {
+          // 尝试从论文内容中提取标题
+          const titleMatch = state.fullText.match(/^(.{10,100}?)(?:\n|\.)/);
+          const paperTitle = titleMatch ? titleMatch[1].trim() : '当前论文';
+
+          const response = await fetch('/api/get_citations', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              title: state.paperTitle, // 直接使用保存的标题
+            }),
+          });
+
+          const result = await response.json();
+
+          if (!response.ok) {
+            if (result.fallback_used && result.citations) {
+              state.paperCitations = result;
+              renderCitations(result, true);
+            } else {
+              throw new Error(result.error || `HTTP ${response.status}`);
+            }
+          } else if (result.success) {
+            state.paperCitations = result;
+            renderCitations(result, false);
+          } else {
+            throw new Error(result.error || '未知错误');
+          }
+        } catch (error) {
+          console.error('引用分析错误:', error);
+          els.citationsContent.innerHTML = `
+                    <div class="text-center text-gray-400 mt-10">
+                        <i class="fa-solid fa-exclamation-triangle text-4xl mb-3 opacity-20"></i>
+                        <p class="text-sm">引用分析失败</p>
+                        <p class="text-xs text-gray-300 mt-2">${error.message}</p>
+                    </div>
+                `;
+        } finally {
+          els.getCitationsBtn.disabled = false;
+          els.getCitationsBtn.innerHTML = `<i class="fa-solid fa-magnifying-glass mr-2"></i> 查找引用`;
+        }
+      });
+
+      function renderCitations(data, isFallback) {
+        let html = '';
+
+        if (isFallback) {
+          html = `
+                    <div class="mb-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+                        <div class="flex items-center">
+                            <i class="fa-solid fa-triangle-exclamation text-yellow-600 mr-2"></i>
+                            <span class="text-yellow-700 text-sm">使用示例数据供参考，真实API可能暂时受限</span>
+                        </div>
+                    </div>
+                `;
+        }
+
+        // 原始论文信息
+        html += `
+                <div class="bg-white rounded-lg border border-gray-200 p-4 mb-4">
+                    <h3 class="font-semibold text-gray-800 mb-2 flex items-center">
+                        <i class="fa-solid fa-file-lines text-blue-600 mr-2"></i>
+                        被引论文信息
+                    </h3>
+                    <div class="text-sm text-gray-700">
+                        <div class="flex items-start mb-2">
+                            <span class="font-medium w-20 flex-shrink-0">标题:</span>
+                            <span class="flex-1">${data.original_paper.title}</span>
+                        </div>
+                        <div class="flex items-center">
+                            <span class="font-medium w-20 flex-shrink-0">被引次数:</span>
+                            <span class="bg-red-100 text-red-800 px-2 py-1 rounded-full text-xs font-semibold">
+                                ${data.original_paper.citationCount} 次
+                            </span>
+                        </div>
+                    </div>
+                </div>
+            `;
+
+        // 引用论文列表
+        html += `
+                <div class="bg-white rounded-lg border border-gray-200 p-4">
+                    <h3 class="font-semibold text-gray-800 mb-3 flex items-center">
+                        <i class="fa-solid fa-quote-left text-green-600 mr-2"></i>
+                        引用文献 (${data.citations_count} 篇)
+                    </h3>
+            `;
+
+        if (data.citations && data.citations.length > 0) {
+          data.citations.forEach((paper, index) => {
+            const authors = paper.authors ? paper.authors.map(a => a.name).join(', ') : '未知作者';
+            const year = paper.year || '未知年份';
+            const citationCount = paper.citationCount || 0;
+            const venue = paper.venue || '未知来源';
+            const abstract = paper.abstract || '暂无摘要';
+
+            html += `
+                        <div class="border border-gray-100 rounded-lg p-4 mb-3 hover:bg-gray-50 transition-colors">
+                            <div class="flex justify-between items-start mb-2">
+                                <h4 class="font-semibold text-gray-800 text-sm flex-1">${
+                                  paper.title
+                                }</h4>
+                                <span class="bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded-full ml-2">#${
+                                  index + 1
+                                }</span>
+                            </div>
+
+                            <div class="text-xs text-gray-600 mb-2">
+                                <i class="fa-solid fa-user-group mr-1"></i> ${authors} |
+                                <i class="fa-solid fa-calendar mr-1 ml-2"></i> ${year} |
+                                <i class="fa-solid fa-quote-right mr-1 ml-2"></i> ${citationCount} 引用
+                            </div>
+
+                            <div class="text-xs text-gray-500 mb-2">
+                                <i class="fa-solid fa-book mr-1"></i> ${venue}
+                            </div>
+
+                            <p class="text-xs text-gray-700 mb-3 leading-relaxed">${abstract}</p>
+
+                            <div class="flex justify-end">
+                                ${
+                                  paper.url
+                                    ? `
+                                    <a href="${paper.url}" target="_blank"
+                                    style="color: white !important; background-color: #2563eb;"
+                                    class="text-xs bg-green-600 text-white px-3 py-1 rounded hover:bg-green-700 transition-colors">
+                                        <i class="fa-solid fa-external-link-alt mr-1"></i> 查看原文
+                                    </a>
+                                `
+                                    : ''
+                                }
+                            </div>
+                        </div>
+                    `;
+          });
+        } else {
+          html += `
+                    <div class="text-center text-gray-400 py-8">
+                        <i class="fa-solid fa-search text-3xl mb-2 opacity-20"></i>
+                        <p>未找到引用文献</p>
+                    </div>
+                `;
+        }
+
+        html += `</div>`;
+        els.citationsContent.innerHTML = html;
+      }
+
+      // 初始化笔记功能
+      function initNotes() {
+        // 绑定事件
+        noteElements.globalNoteEditor.addEventListener('input', e => {
+          state.notes.global = e.target.value; //
+          state.notes.hasUnsavedChanges = true;
+          updateSaveStatus();
+        });
+
+        noteElements.pageNoteEditor.addEventListener('input', e => {
+          const currentPage = state.notes.currentPage || 1;
+          state.notes.pages[currentPage] = e.target.value; //
+          state.notes.hasUnsavedChanges = true;
+          updateSaveStatus();
+        });
+
+        noteElements.saveNotesBtn.addEventListener('click', saveNotes);
+        noteElements.loadNotesBtn.addEventListener('click', loadNotes);
+        noteElements.copyPageNotes.addEventListener('click', copyPageNotes);
+        noteElements.clearPageNotes.addEventListener('click', clearPageNotes);
+        noteElements.exportNotesBtn.addEventListener('click', exportNotes);
+
+        // 自动保存功能（可选）
+        setInterval(() => {
+          if (state.notes.hasUnsavedChanges) {
+            autoSaveNotes();
+          }
+        }, 30000); // 每30秒自动保存
+      }
+
+      // 更新保存状态显示
+      function updateSaveStatus() {
+        const status = state.notes.hasUnsavedChanges ? '未保存' : '已保存';
+        document.querySelectorAll('#global-note-status, #page-note-status').forEach(el => {
+          el.textContent = status;
+          el.className = `text-xs ${
+            state.notes.hasUnsavedChanges ? 'text-orange-500' : 'text-green-500'
+          }`;
+        });
+      }
+
+      // 保存笔记
+      async function saveNotes() {
+        if (!state.fullText) {
+          alert('请先上传PDF文件');
+          return;
+        }
+
+        try {
+          noteElements.saveNotesBtn.disabled = true;
+          noteElements.saveNotesBtn.innerHTML =
+            '<i class="fa-solid fa-spinner fa-spin mr-2"></i> 保存中...';
+
+          const response = await fetch('/api/save_note', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'X-API-Key': state.apiKey,
+            },
+            body: JSON.stringify({
+              pdf_content: state.fullText.substring(0, 10000),
+              notes: {
+                global: state.notes.global,
+                pages: state.notes.pages,
+              },
+            }),
+          });
+
+          const result = await response.json();
+
+          if (result.success) {
+            state.notes.hasUnsavedChanges = false;
+            updateSaveStatus();
+            updatePageThumbnails();
+            showNotification('笔记保存成功', 'success');
+          } else {
+            throw new Error(result.error);
+          }
+        } catch (error) {
+          console.error('保存笔记错误:', error);
+          showNotification('保存失败: ' + error.message, 'error');
+        } finally {
+          noteElements.saveNotesBtn.disabled = false;
+          noteElements.saveNotesBtn.innerHTML =
+            '<i class="fa-solid fa-floppy-disk mr-2"></i> 保存笔记';
+        }
+      }
+
+      // 加载笔记
+      async function loadNotes() {
+        if (!state.fullText) {
+          alert('请先上传PDF文件');
+          return;
+        }
+
+        try {
+          noteElements.loadNotesBtn.disabled = true;
+          noteElements.loadNotesBtn.innerHTML =
+            '<i class="fa-solid fa-spinner fa-spin mr-2"></i> 加载中...';
+
+          const response = await fetch('/api/load_note', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'X-API-Key': state.apiKey,
+            },
+            body: JSON.stringify({
+              pdf_content: state.fullText.substring(0, 10000),
+            }),
+          });
+
+          const result = await response.json();
+          console.log('加载笔记结果:', result);
+
+          if (result.success && result.notes) {
+            state.notes.global = result.notes.global || '';
+            state.notes.pages = result.notes.pages || {};
+
+            // 更新输入框
+            document.getElementById('global-note-editor').value = state.notes.global;
+
+            const currentPage = state.notes.currentPage || 1;
+            document.getElementById('page-note-editor').value =
+              state.notes.pages[currentPage] || state.notes.pages[String(currentPage)] || '';
+
+            // ⭐ 更新页面导航和选择器
+            updatePageThumbnails();
+
+            state.notes.hasUnsavedChanges = false;
+            updateSaveStatus();
+
+            alert('笔记加载成功');
+          } else {
+            alert(result.message || '未找到已保存的笔记');
+          }
+        } catch (error) {
+          console.error('加载笔记错误:', error);
+          alert('加载失败: ' + error.message);
+        } finally {
+          noteElements.loadNotesBtn.disabled = false;
+          noteElements.loadNotesBtn.innerHTML =
+            '<i class="fa-solid fa-folder-open mr-2"></i> 加载笔记';
+        }
+      }
+
+      // 导出笔记函数
+      async function exportNotes() {
+        const hasGlobal = state.notes.global && state.notes.global.trim();
+        const hasPages = Object.values(state.notes.pages || {}).some(p => p && p.trim());
+
+        if (!hasGlobal && !hasPages) {
+          alert('暂无笔记可导出');
+          return;
+        }
+
+        const exportBtn = document.getElementById('export-notes-btn');
+
+        try {
+          if (exportBtn) {
+            exportBtn.disabled = true;
+            exportBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-2"></i> 导出中...';
+          }
+
+          const paperTitle = state.paperTitle || '未命名论文';
+          const content = generateMarkdown(paperTitle);
+          const timestamp = new Date().toISOString().slice(0, 10);
+          const filename = `论文笔记_${paperTitle}_${timestamp}.md`;
+
+          downloadFile(content, filename, 'text/markdown');
+          alert('笔记导出成功！');
+        } catch (error) {
+          console.error('导出笔记错误:', error);
+          alert('导出失败: ' + error.message);
+        } finally {
+          if (exportBtn) {
+            exportBtn.disabled = false;
+            exportBtn.innerHTML = '<i class="fa-solid fa-download mr-2"></i> 导出笔记';
+          }
+        }
+      }
+
+      // 生成 Markdown 格式
+      function generateMarkdown(paperTitle) {
+        let md = `# 📚 论文笔记：${paperTitle}\n\n`;
+        md += `**导出时间**: ${new Date().toLocaleString('zh-CN')}\n\n`;
+        md += `---\n\n`;
+
+        if (state.notes.global) {
+          md += `## 📝 全局笔记\n\n${state.notes.global}\n\n---\n\n`;
+        }
+
+        const pages = state.notes.pages || {};
+        const sortedPages = Object.entries(pages)
+          .filter(([_, content]) => content && content.trim())
+          .sort((a, b) => parseInt(a[0]) - parseInt(b[0]));
+
+        if (sortedPages.length > 0) {
+          md += `## 📄 页面笔记\n\n`;
+          for (const [pageNum, content] of sortedPages) {
+            md += `### 第 ${pageNum} 页\n\n${content}\n\n`;
+          }
+        }
+
+        return md;
+      }
+
+      // 下载文件
+      function downloadFile(content, filename, mimeType) {
+        const blob = new Blob([content], { type: mimeType + ';charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+
+        setTimeout(() => {
+          document.body.removeChild(a);
+          URL.revokeObjectURL(url);
+        }, 100);
+      }
+
+      function initPageNotes() {
+        if (!state.pdfDoc) return;
+
+        // 清空现有内容
+        noteElements.pageThumbnails.innerHTML = '';
+
+        // 为每一页创建缩略图和选项
+        for (let i = 1; i <= state.pdfDoc.numPages; i++) {
+          // 创建缩略图项
+          const thumbItem = document.createElement('div');
+          thumbItem.className = `page-thumbnail cursor-pointer p-2 rounded border-2 ${
+            i === state.notes.currentPage
+              ? 'border-blue-500 bg-blue-50'
+              : 'border-transparent hover:bg-gray-100'
+          }`;
+          thumbItem.innerHTML = `
+                    <div class="text-xs text-center mb-1 font-medium">第 ${i} 页</div>
+                    <div class="bg-white border rounded p-1 text-center text-xs text-gray-400">
+                        <i class="fa-solid fa-file-lines"></i>
+                        ${state.notes.pages[i] ? '有笔记' : '无笔记'}
+                    </div>
+                `;
+          thumbItem.addEventListener('click', () => switchPageNote(i));
+          noteElements.pageThumbnails.appendChild(thumbItem);
+        }
+
+        // 更新当前页面显示
+        updatePageThumbnails();
+      }
+
+      function switchPageNote(pageNum) {
+        // 1. 先保存当前页面的内容到 state
+        const currentPage = state.notes.currentPage || 1;
+        const pageEditor = document.getElementById('page-note-editor');
+        if (pageEditor && pageEditor.value) {
+          state.notes.pages[currentPage] = pageEditor.value;
+        }
+
+        // 2. 切换到新页面
+        state.notes.currentPage = pageNum;
+
+        // 3. ⭐ 显示新页面的笔记内容
+        if (pageEditor) {
+          pageEditor.value = state.notes.pages[pageNum] || '';
+        }
+
+        // 4. 更新页面标签
+        const currentPageLabel = document.getElementById('current-page-label');
+        if (currentPageLabel) {
+          currentPageLabel.textContent = `第 ${pageNum} 页笔记`;
+        }
+
+        console.log(`切换到第 ${pageNum} 页，内容:`, state.notes.pages[pageNum] || '(空)');
+      }
+
+      // 更新页面笔记编辑器
+      function updatePageThumbnails() {
+        const container = document.getElementById('page-thumbnails');
+        if (!container) return;
+
+        const pageCount = state.pageCount || 10;
+        const currentPage = state.notes.currentPage || 1;
+
+        container.innerHTML = '';
+
+        for (let i = 1; i <= pageCount; i++) {
+          // ⭐ 同时检查数字和字符串 key
+          const hasNote = !!(state.notes.pages[i] || state.notes.pages[String(i)]);
+          const isActive = i === currentPage;
+
+          const thumb = document.createElement('div');
+          thumb.className = `page-thumb cursor-pointer p-2 rounded border-2 text-center transition-all ${
+            isActive ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:border-gray-400'
+          }`;
+
+          thumb.innerHTML = `
+                    <div class="text-xs font-medium ${
+                      isActive ? 'text-blue-600' : 'text-gray-600'
+                    }">
+                        第 ${i} 页
+                    </div>
+                    <div class="text-xs mt-1 ${hasNote ? 'text-green-600' : 'text-gray-400'}">
+                        ${hasNote ? '<i class="fa-solid fa-note-sticky"></i> 有笔记' : '无笔记'}
+                    </div>
+                `;
+
+          thumb.addEventListener('click', () => {
+            switchPageNote(i);
+            updatePageThumbnails(); // 更新选中状态
+          });
+
+          container.appendChild(thumb);
+        }
+
+        console.log('缩略图已更新，pages:', state.notes.pages);
+      }
+
+      // 复制页面笔记
+      function copyPageNotes() {
+        const notes = state.notes.pages[state.notes.currentPage];
+        if (notes) {
+          navigator.clipboard.writeText(notes).then(() => {
+            showNotification('笔记已复制到剪贴板', 'success');
+          });
+        } else {
+          showNotification('当前页面没有笔记', 'info');
+        }
+      }
+
+      // 清空页面笔记
+      function clearPageNotes() {
+        if (confirm('确定要清空当前页面的笔记吗？')) {
+          delete state.notes.pages[state.notes.currentPage];
+          noteElements.pageNoteEditor.value = '';
+          state.notes.hasUnsavedChanges = true;
+          updateSaveStatus();
+          initPageNotes(); // 重新初始化页面显示
+          showNotification('页面笔记已清空', 'success');
+        }
+      }
+
+      // 自动保存
+      function autoSaveNotes() {
+        if (state.notes.hasUnsavedChanges) {
+          saveNotes()
+            .then(() => {
+              console.log('笔记已自动保存');
+            })
+            .catch(error => {
+              console.error('自动保存失败:', error);
+            });
+        }
+      }
+
+      // 在PDF上传成功后初始化笔记功能
+      function setupNotesAfterUpload() {
+        // 计算PDF哈希
+        state.pdfHash = calculatePDFHash(state.fullText);
+
+        // 初始化页面笔记
+        initPageNotes();
+
+        // 尝试自动加载现有笔记
+        setTimeout(() => {
+          loadNotes();
+        }, 1000);
+      }
+
+      // 辅助函数：计算PDF哈希
+      function calculatePDFHash(text) {
+        // 简单的哈希函数，实际应用中可以使用更复杂的方法
+        let hash = 0;
+        for (let i = 0; i < Math.min(text.length, 1000); i++) {
+          const char = text.charCodeAt(i);
+          hash = (hash << 5) - hash + char;
+          hash = hash & hash; // Convert to 32bit integer
+        }
+        return hash.toString(16);
+      }
+    </script>
+  </body>
+</html>
